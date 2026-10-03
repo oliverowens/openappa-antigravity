@@ -14,8 +14,17 @@ import threading
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from typing import Optional
 
-from .engine import AppaEngine
-from .algebra import ToolRule, Trust
+try:
+    from .engine import AppaEngine
+    from .algebra import ToolRule, Trust
+    from .policy_loader import load_policy_and_config
+except ImportError:
+    import sys
+    from pathlib import Path
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+    from runtime.engine import AppaEngine
+    from runtime.algebra import ToolRule, Trust
+    from runtime.policy_loader import load_policy_and_config
 
 
 class AppaHTTPHandler(BaseHTTPRequestHandler):
@@ -145,3 +154,28 @@ class AppaServer:
             self.server.shutdown()
             self.server.server_close()
             self.server = None
+
+
+def run_server(host: str = "127.0.0.1", port: int = 8788, policy_path: Optional[str] = None) -> None:
+    from pathlib import Path
+    import time
+
+    if policy_path is None:
+        policy_path = str(Path(__file__).resolve().parent.parent / "policy" / "appa.toml")
+
+    rules, config = load_policy_and_config(policy_path)
+    engine = AppaEngine(rules=rules, config=config)
+    server = AppaServer(engine=engine, host=host, port=port)
+    server.start()
+    print(f"[OpenAPPA] Server running on http://{host}:{port} (policy key: {engine.policy_key})")
+    print("[OpenAPPA] Press Ctrl+C to stop.")
+    try:
+        while True:
+            time.sleep(1)
+    except KeyboardInterrupt:
+        print("\n[OpenAPPA] Stopping server...")
+        server.stop()
+
+
+if __name__ == "__main__":
+    run_server()
