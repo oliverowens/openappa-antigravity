@@ -40,6 +40,23 @@ except ImportError:
     from adapter.client import AppaClient, AppaClientError
 
 
+def _ensure_runtime_running(client: Optional[AppaClient] = None) -> None:
+    """Attempts to auto-launch runtime server if default localhost endpoint is offline."""
+    if client and "8788" not in client.runtime_url:
+        return
+    import subprocess
+    import time
+    from pathlib import Path
+    server_script = Path(__file__).resolve().parent.parent / "runtime" / "server.py"
+    if server_script.is_file():
+        try:
+            creationflags = getattr(subprocess, "CREATE_NO_WINDOW", 0) | getattr(subprocess, "DETACHED_PROCESS", 0)
+            subprocess.Popen([sys.executable, str(server_script)], creationflags=creationflags)
+            time.sleep(0.6)
+        except Exception:
+            pass
+
+
 def handle_pre_tool_use(payload: Dict[str, Any], client: AppaClient) -> Dict[str, Any]:
     tool_call = payload.get("toolCall", {})
     raw_name = tool_call.get("name", "")
@@ -56,12 +73,22 @@ def handle_pre_tool_use(payload: Dict[str, Any], client: AppaClient) -> Dict[str
             arguments=args,
             call_id=f"step_{step_idx}_{raw_name}",
         )
-    except AppaClientError as e:
-        # Strict fail-closed: runtime errors halt execution
-        return {
-            "decision": "deny",
-            "reason": f"[appa] Fail-closed block: OpenAPPA runtime unavailable ({e})",
-        }
+    except AppaClientError:
+        # Attempt auto-launching server if offline and targeting default 8788, then retry once
+        _ensure_runtime_running(client)
+        try:
+            decision = client.tool_call(
+                root_id=conversation_id,
+                tool=canonical_tool.canonical_id,
+                arguments=args,
+                call_id=f"step_{step_idx}_{raw_name}",
+            )
+        except AppaClientError as e:
+            # Strict fail-closed: runtime errors halt execution
+            return {
+                "decision": "deny",
+                "reason": f"[appa] Fail-closed block: OpenAPPA runtime unavailable ({e})",
+            }
     except Exception as e:
         return {
             "decision": "deny",
