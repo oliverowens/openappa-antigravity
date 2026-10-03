@@ -1,0 +1,31 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "openappa-antigravity"
+version = "0.1.0"
+description = "Canonical OpenAPPA battery and Information-Flow Control adapter for Google Antigravity"
+readme = "README.md"
+license = { text = "MIT" }
+authors = [
+    { name = "Oliver Owens" }
+]
+requires-python = ">=3.11"
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Security",
+]
+
+[project.scripts]
+appa = "adapter.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["adapter*", "runtime*"]
