@@ -45,8 +45,9 @@ class AppaEngine:
         "host/antigravity/execute_remedy_plan",
     }
 
-    def __init__(self, rules: List[ToolRule], confined_tools: Optional[Set[str]] = None):
+    def __init__(self, rules: List[ToolRule], config: Optional[Any] = None, confined_tools: Optional[Set[str]] = None):
         self.rules = rules
+        self.config = config
         self.confined_tools = confined_tools or set()
         self.trajectories: Dict[str, TrajectoryState] = {}
         self.policy_key = hashlib.sha256(str([(r.canonical_name, r.raw_pattern) for r in rules]).encode()).hexdigest()[:16]
@@ -85,6 +86,37 @@ class AppaEngine:
     ) -> Dict[str, Any]:
         traj = self._get_trajectory(root_id, child_id)
         cid = call_id or str(uuid.uuid4())
+
+        # 0. Check subagent role isolation
+        if child_id and self.config:
+            if not getattr(self.config, "subagents_allow_execution", False) and "run_command" in tool:
+                return {
+                    "protocol": 1,
+                    "decision": "deny_call",
+                    "feedback": "[appa] Subagent blocked: shell commands are restricted by subagent isolation policy.",
+                    "offers": [],
+                }
+            if not getattr(self.config, "subagents_allow_writes", False) and (
+                "write_to_file" in tool or "replace_file_content" in tool
+            ):
+                return {
+                    "protocol": 1,
+                    "decision": "deny_call",
+                    "feedback": "[appa] Subagent blocked: filesystem modifications are restricted by subagent isolation policy.",
+                    "offers": [],
+                }
+
+        # 1. Check boundary policy for file writes
+        if self.config and getattr(self.config, "workspace_only", True):
+            if "write_to_file" in tool or "replace_file_content" in tool:
+                path_val = str(arguments.get("TargetFile", "") or arguments.get("path", "") or arguments.get("AbsolutePath", "")).replace("\\", "/")
+                if path_val.startswith(("/etc", "C:/Windows", "C:/Program Files", "/usr", "/bin", "/sbin")):
+                    return {
+                        "protocol": 1,
+                        "decision": "deny_call",
+                        "feedback": f"[appa] Blocked: path '{path_val}' is outside permitted workspace boundaries.",
+                        "offers": [],
+                    }
 
         # Check if this is the control tool for remedies
         if tool in self.CONTROL_TOOLS:

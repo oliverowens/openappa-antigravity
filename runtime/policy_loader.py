@@ -7,10 +7,24 @@ and engine configurations using Python's built-in tomllib.
 
 from __future__ import annotations
 import tomllib
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 from .algebra import ToolRule, Trust
+
+
+@dataclass
+class PolicyConfig:
+    hitl_mode: str = "chat"
+    classification_mode: str = "local"
+    redaction_engine: str = "builtin-regex"
+    directory_provider: str = "none"
+    workspace_only: bool = True
+    allowed_external_paths: List[str] = field(default_factory=list)
+    trusted_domains: List[str] = field(default_factory=list)
+    subagents_allow_execution: bool = False
+    subagents_allow_writes: bool = False
 
 
 def parse_tool_rule(data: Dict[str, Any]) -> ToolRule:
@@ -55,8 +69,8 @@ def parse_tool_rule(data: Dict[str, Any]) -> ToolRule:
     )
 
 
-def load_policy(toml_path: str | Path) -> List[ToolRule]:
-    """Loads a TOML policy file and returns a list of ToolRules."""
+def load_policy_and_config(toml_path: str | Path) -> Tuple[List[ToolRule], PolicyConfig]:
+    """Loads a TOML policy file and returns both ToolRules and PolicyConfig."""
     path = Path(toml_path)
     if not path.is_file():
         raise FileNotFoundError(f"Policy file not found: {path}")
@@ -72,4 +86,30 @@ def load_policy(toml_path: str | Path) -> List[ToolRule]:
         rule = parse_tool_rule(tool_data)
         rules.append(rule)
 
+    hitl_sec = policy_sec.get("hitl", {})
+    class_sec = policy_sec.get("classification", {})
+    redact_sec = policy_sec.get("sanitizers", {}).get("redact-secrets", {})
+    dir_sec = policy_sec.get("directory", {})
+    bound_sec = policy_sec.get("boundaries", {})
+    net_sec = policy_sec.get("network", {})
+    sub_sec = policy_sec.get("subagents", {})
+
+    config = PolicyConfig(
+        hitl_mode=hitl_sec.get("mode", "chat"),
+        classification_mode=class_sec.get("mode", "local"),
+        redaction_engine=redact_sec.get("engine", "builtin-regex"),
+        directory_provider=dir_sec.get("provider", "none"),
+        workspace_only=bound_sec.get("workspace_only", True),
+        allowed_external_paths=bound_sec.get("allowed_external_paths", []),
+        trusted_domains=net_sec.get("trusted_domains", []),
+        subagents_allow_execution=sub_sec.get("allow_execution", False),
+        subagents_allow_writes=sub_sec.get("allow_writes", False),
+    )
+
+    return rules, config
+
+
+def load_policy(toml_path: str | Path) -> List[ToolRule]:
+    """Loads a TOML policy file and returns a list of ToolRules."""
+    rules, _ = load_policy_and_config(toml_path)
     return rules

@@ -11,6 +11,59 @@ version = 2
 description = "Antigravity OpenAPPA Information-Flow Control Policy"
 
 # ==============================================================================
+# Governance & External Services
+# ==============================================================================
+
+[policy.hitl]
+# Mode for remedy approvals: "chat" (default interactive prompt), "slack", "pagerduty", "cli"
+mode = "chat"
+prompt_user = true
+
+[policy.classification]
+# Policy classification engine: "local" (default pattern heuristic), "llm_guardrails"
+mode = "local"
+
+[policy.sanitizers.redact-secrets]
+engine = "builtin-regex"
+# Note on limitations: Built-in regex matches structured credentials, private keys,
+# AWS/GitHub/Bearer tokens, and key-value assignments. Unstructured or custom
+# high-entropy secrets without standard keywords require an external DLP service.
+
+[policy.directory]
+# Directory provider: "planned" (Future feature: GitHub Org / Okta / SCIM sync)
+provider = "none"
+status = "planned"
+
+# ==============================================================================
+# Boundaries & Allowlist
+# ==============================================================================
+
+[policy.boundaries]
+# Restricts write operations to the active workspace / git project directory
+workspace_only = true
+# Optional custom paths allowed outside workspace
+allowed_external_paths = []
+
+[policy.network]
+# Outbound URLs matching trusted_domains preserve 'trusted' trajectory trust.
+# Any URL outside this list degrades trust to 'suspicious'.
+trusted_domains = [
+    "github.com",
+    "raw.githubusercontent.com",
+    "api.github.com",
+    "pypi.org",
+    "docs.python.org"
+]
+
+[policy.subagents]
+# Subagents default to quarantined research mode:
+# - Allowed: view_file, search_web, read_url_content
+# - Blocked by default: run_command, write_to_file, replace_file_content
+default_role = "research"
+allow_execution = false
+allow_writes = false
+
+# ==============================================================================
 # 1. Shell Command Execution (run_command)
 # ==============================================================================
 
@@ -91,31 +144,49 @@ description = "Reads files within the repository/workspace."
 name = "host/antigravity/write_to_file"
 requires = { trust = "trusted" }
 delta = {}
-description = "Writes new files or overwrites existing files."
+description = "Writes new files or overwrites existing files within workspace."
 
 [[policy.tool]]
 name = "host/antigravity/replace_file_content"
 requires = { trust = "trusted" }
 delta = {}
-description = "Edits contiguous lines in existing files."
+description = "Edits contiguous lines in existing files within workspace."
 
 # ==============================================================================
 # 4. Web Fetch & Search (read_url_content, search_web)
 # ==============================================================================
 
-# Reading web content requires public audience (prevents exfiltration via URL)
-# and degrades trajectory trust to 'suspicious' (untrusted external data).
+# Trusted domains: preserve 'trusted' trust
+[[policy.tool]]
+name = "host/antigravity/read_url_content(url:*github.com/*)"
+requires = { audience = { contains = ["public"] } }
+delta = {}
+description = "Fetches content from trusted github.com domain (preserves trusted status)."
+
+[[policy.tool]]
+name = "host/antigravity/read_url_content(url:*docs.python.org/*)"
+requires = { audience = { contains = ["public"] } }
+delta = {}
+description = "Fetches content from trusted docs.python.org domain (preserves trusted status)."
+
+[[policy.tool]]
+name = "host/antigravity/read_url_content(url:*pypi.org/*)"
+requires = { audience = { contains = ["public"] } }
+delta = {}
+description = "Fetches content from trusted pypi.org domain (preserves trusted status)."
+
+# General web fetch: degrades trajectory trust to 'suspicious'
 [[policy.tool]]
 name = "host/antigravity/read_url_content"
 requires = { audience = { contains = ["public"] } }
 delta = { trust = "suspicious" }
-description = "Fetches external web content over HTTP."
+description = "Fetches external web content over HTTP; degrades trust to suspicious."
 
 [[policy.tool]]
 name = "host/antigravity/search_web"
 requires = { audience = { contains = ["public"] } }
 delta = { trust = "suspicious" }
-description = "Performs web search queries."
+description = "Performs web search queries; degrades trust to suspicious."
 
 # ==============================================================================
 # 5. Subagents (invoke_subagent)

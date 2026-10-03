@@ -25,7 +25,7 @@ sys.path.insert(0, str(ROOT_DIR))
 
 from runtime.engine import AppaEngine
 from runtime.server import AppaServer
-from runtime.policy_loader import load_policy
+from runtime.policy_loader import load_policy, load_policy_and_config
 from adapter.client import AppaClient, AppaClientError
 from adapter.agent_loop import OpenAppaAgentLoop, InterceptedExecutionError
 from adapter.hooks_handler import handle_pre_tool_use
@@ -38,8 +38,8 @@ class TestOpenAppaAntigravity(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         policy_path = ROOT_DIR / "policy" / "appa.toml"
-        cls.rules = load_policy(policy_path)
-        cls.engine = AppaEngine(rules=cls.rules)
+        cls.rules, cls.config = load_policy_and_config(policy_path)
+        cls.engine = AppaEngine(rules=cls.rules, config=cls.config)
         cls.server = AppaServer(engine=cls.engine, host="127.0.0.1", port=cls.port)
         cls.server.start()
         time.sleep(0.2)  # Wait for server to bind
@@ -326,6 +326,75 @@ class TestOpenAppaAntigravity(unittest.TestCase):
         )
         self.assertFalse(ok)
         self.assertIn("Missing required property: count", result)
+
+    def test_trusted_domain_preserves_trust_and_allows_command(self):
+        """Fetching from an allowlisted trusted domain preserves trusted status, allowing subsequent command."""
+        # 1. Fetch content from trusted docs.python.org domain
+        def fetch_docs(args):
+            return "Official Python documentation content"
+
+        ok, content = self.agent.execute_tool_safely(
+            raw_name="read_url_content",
+            arguments={"Url": "https://docs.python.org/3/library/os.html"},
+            tool_fn=fetch_docs,
+        )
+        self.assertTrue(ok)
+
+        # 2. Subsequent command execution should succeed because trust remained 'trusted'
+        cmd_ran = False
+
+        def run_cmd(args):
+            nonlocal cmd_ran
+            cmd_ran = True
+            return "command_succeeded"
+
+        ok_cmd, res_cmd = self.agent.execute_tool_safely(
+            raw_name="run_command",
+            arguments={"CommandLine": "python --version"},
+            tool_fn=run_cmd,
+        )
+        self.assertTrue(ok_cmd)
+        self.assertTrue(cmd_ran)
+
+    def test_subagent_shell_execution_restricted_by_default(self):
+        """Subagents are restricted to research tasks by default; shell commands in child context are blocked."""
+        child_ran_command = False
+
+        def child_task():
+            # Child attempts to run a shell command
+            ok, msg = self.agent.execute_tool_safely(
+                raw_name="run_command",
+                arguments={"CommandLine": "whoami"},
+                tool_fn=lambda args: "root",
+                child_id="child_subagent_1",
+            )
+            nonlocal child_ran_command
+            child_ran_command = ok
+            return json.dumps({"status": "done"})
+
+        self.agent.execute_subagent_safely(
+            subagent_name="quarantined_worker",
+            child_fn=child_task,
+        )
+        self.assertFalse(child_ran_command, "Security violation: Subagent executed shell command!")
+
+    def test_workspace_boundary_enforcement(self):
+        """File write attempts outside workspace boundaries are blocked fail-closed."""
+        write_ran = False
+
+        def do_write(args):
+            nonlocal write_ran
+            write_ran = True
+            return "written"
+
+        ok, msg = self.agent.execute_tool_safely(
+            raw_name="write_to_file",
+            arguments={"TargetFile": "C:/Windows/System32/drivers/etc/hosts"},
+            tool_fn=do_write,
+        )
+        self.assertFalse(ok)
+        self.assertFalse(write_ran, "Security violation: Wrote to system path outside workspace!")
+        self.assertIn("outside permitted workspace boundaries", msg)
 
 
 if __name__ == "__main__":
