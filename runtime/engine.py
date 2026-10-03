@@ -13,7 +13,7 @@ from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Tuple
 
 from .algebra import Label, Trust, ToolRule
-from .sanitizers import redact_secrets, attest_schema
+from .sanitizers import redact_secrets, attest_schema, canonical_json
 
 
 @dataclass
@@ -124,7 +124,7 @@ class AppaEngine:
             if offer_id in traj.active_offers:
                 offer = traj.active_offers.pop(offer_id)
                 # Authorize the call for retry
-                call_key = f"{offer.tool_name}:{json.dumps(offer.arguments, sort_keys=True)}"
+                call_key = f"{offer.tool_name}:{canonical_json(offer.arguments)}"
                 traj.authorized_calls[call_key] = offer.arguments
                 return {
                     "protocol": 1,
@@ -139,7 +139,7 @@ class AppaEngine:
             }
 
         # Check if previously authorized via remedy
-        call_key = f"{tool}:{json.dumps(arguments, sort_keys=True)}"
+        call_key = f"{tool}:{canonical_json(arguments)}"
         if call_key in traj.authorized_calls:
             traj.authorized_calls.pop(call_key)
             traj.pending_calls[cid] = {"tool": tool, "arguments": arguments, "rule": None, "authorized": True}

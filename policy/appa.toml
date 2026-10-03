@@ -9,6 +9,9 @@
 [policy]
 version = 2
 description = "Antigravity OpenAPPA Information-Flow Control Policy"
+# Battery inclusion: compose with external OpenAPPA marketplace batteries
+include = []
+
 
 # ==============================================================================
 # Governance & External Services
@@ -197,8 +200,55 @@ name = "host/antigravity/invoke_subagent"
 delta = {}
 description = "Spawns child subagents with quarantined trajectory context."
 
+[[policy.tool]]
+name = "host/antigravity/send_message"
+requires = { trust = "trusted" }
+delta = {}
+description = "Sends inter-agent messages; requires trusted trajectory."
+
+[[policy.tool]]
+name = "host/antigravity/manage_subagents"
+requires = { trust = "trusted" }
+delta = {}
+description = "Lists or manages running subagents; requires trusted trajectory."
+
+[[policy.tool]]
+name = "host/antigravity/define_subagent"
+requires = { trust = "trusted" }
+delta = {}
+description = "Defines new subagent roles; requires trusted trajectory."
+
 # ==============================================================================
-# 6. Remedy Control Tool (execute_remedy_plan)
+# 6. Interactive & Lifecycle Tools (ask_question, manage_task, schedule, generate_image)
+# ==============================================================================
+
+[[policy.tool]]
+name = "host/antigravity/ask_question"
+requires = { trust = "trusted" }
+delta = {}
+description = "Interactive human-in-the-loop prompt; requires trusted trajectory to prevent prompt injection spoofing."
+
+[[policy.tool]]
+name = "host/antigravity/manage_task"
+requires = { trust = "trusted" }
+delta = {}
+description = "Inspects and manages background tasks; requires trusted trajectory."
+
+[[policy.tool]]
+name = "host/antigravity/schedule"
+requires = { trust = "trusted" }
+delta = {}
+description = "Schedules one-shot or recurring background tasks; requires trusted trajectory."
+
+[[policy.tool]]
+name = "host/antigravity/generate_image"
+requires = { trust = "trusted" }
+delta = {}
+description = "Generates UI mockup images; requires trusted trajectory."
+
+
+# ==============================================================================
+# 7. Remedy Control Tool (execute_remedy_plan)
 # ==============================================================================
 
 [[policy.tool]]
@@ -212,7 +262,7 @@ delta = {}
 description = "Canonical remedy execution tool."
 
 # ==============================================================================
-# 7. Built-in Sanitizers
+# 8. Built-in Sanitizers
 # ==============================================================================
 
 [[policy.sanitizer]]

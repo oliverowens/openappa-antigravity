@@ -9,7 +9,7 @@ from __future__ import annotations
 import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 from .algebra import ToolRule, Trust
 
@@ -69,11 +69,22 @@ def parse_tool_rule(data: Dict[str, Any]) -> ToolRule:
     )
 
 
-def load_policy_and_config(toml_path: str | Path) -> Tuple[List[ToolRule], PolicyConfig]:
-    """Loads a TOML policy file and returns both ToolRules and PolicyConfig."""
-    path = Path(toml_path)
+def load_policy_and_config(
+    toml_path: str | Path,
+    visited_paths: Optional[Set[Path]] = None,
+) -> Tuple[List[ToolRule], PolicyConfig]:
+    """Loads a TOML policy file and returns both ToolRules and PolicyConfig.
+    Supports OpenAPPA 'include = [...]' directive for composing batteries.
+    """
+    path = Path(toml_path).resolve()
     if not path.is_file():
         raise FileNotFoundError(f"Policy file not found: {path}")
+
+    if visited_paths is None:
+        visited_paths = set()
+    if path in visited_paths:
+        raise ValueError(f"Circular include detected: {path}")
+    visited_paths.add(path)
 
     with open(path, "rb") as f:
         data = tomllib.load(f)
@@ -82,9 +93,20 @@ def load_policy_and_config(toml_path: str | Path) -> Tuple[List[ToolRule], Polic
     policy_sec = data.get("policy", {})
     tools = policy_sec.get("tool", [])
 
+    # Local rules first (OpenAPPA first-match evaluation)
     for tool_data in tools:
         rule = parse_tool_rule(tool_data)
         rules.append(rule)
+
+    # Process included policies/batteries
+    includes = data.get("include", []) or policy_sec.get("include", [])
+    if isinstance(includes, str):
+        includes = [includes]
+
+    for inc in includes:
+        inc_path = (path.parent / inc).resolve()
+        inc_rules, _ = load_policy_and_config(inc_path, visited_paths)
+        rules.extend(inc_rules)
 
     hitl_sec = policy_sec.get("hitl", {})
     class_sec = policy_sec.get("classification", {})

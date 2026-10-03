@@ -84,24 +84,47 @@ Configured in [`policy/appa.toml`](policy/appa.toml):
 
 ```text
 openappa-antigravity/
+├── .agents/
+│   ├── hooks.json             # Native Antigravity PreToolUse hook configuration
+│   └── skills/
+│       └── appa-guide/        # Antigravity setup, tuning, and inspection skill
 ├── adapter/
 │   ├── agent_loop.py          # Complete agent loop proxy with call, result & subagent checks
 │   ├── antigravity_adapter.py # Canonical tool normalizer and selector extractor
+│   ├── cli.py                 # Canonical OpenAPPA CLI (describe, replay, yell)
 │   ├── client.py              # OpenAPPA Wire Protocol 1 HTTP client (fail-closed)
 │   └── hooks_handler.py       # CLI bridge for Antigravity .agents/hooks.json
 ├── policy/
 │   └── appa.toml              # Root policy defining tool contracts, labels & sanitizers
+├── policy-tests/
+│   └── trajectories_replay.json # Scripted deterministic replay trace suite
 ├── runtime/
 │   ├── algebra.py             # APPA Information-Flow Control monoid & lattice algebra
 │   ├── engine.py              # Trajectory state store and decision engine
-│   ├── policy_loader.py       # Built-in TOML policy loader & config parser
-│   ├── sanitizers.py          # redact-secrets and attest-schema sanitizers
+│   ├── policy_loader.py       # Built-in TOML policy loader with include = [...] support
+│   ├── sanitizers.py          # redact-secrets, attest-schema & RFC 8785 canonical JSON
 │   └── server.py              # OpenAPPA HTTP server (127.0.0.1:8788)
-├── skills/
-│   └── appa-guide/
-│       └── SKILL.md           # Antigravity-specific setup and tuning guide
+├── appa-package.toml          # Canonical OpenAPPA battery package manifest
+├── appa.py                    # Root CLI entry point
 └── tests/
-    └── test_suite.py          # Automated verification test suite (13 test cases)
+    └── test_suite.py          # Automated verification test suite (18 test cases)
+```
+
+---
+
+## Canonical OpenAPPA CLI
+
+The repository includes a complete implementation of the canonical OpenAPPA CLI (`python appa.py` or `python -m adapter.cli`):
+
+```bash
+# Validate policy configuration, verify syntax and display rules fingerprint
+python appa.py describe --check
+
+# Deterministically replay recorded event traces without running live tools
+python appa.py replay policy-tests/
+
+# Generate an openappa.yell.v1 diagnostic report
+python appa.py yell
 ```
 
 ---
@@ -117,6 +140,13 @@ openappa-antigravity/
 | `read_url_content` | `host/antigravity/read_url_content` | `url` | Requires `public` audience. Preserves trust for allowlisted domains; degrades to `suspicious` for untrusted URLs. |
 | `search_web` | `host/antigravity/search_web` | `query` | Requires `public` audience. Downgrades trajectory trust to `suspicious`. |
 | `invoke_subagent` | `host/antigravity/invoke_subagent` | N/A | Starts quarantined child context. Returns require schema attestation. |
+| `send_message` | `host/antigravity/send_message` | `recipient` | Requires `trusted` trajectory. Governs inter-agent messaging. |
+| `manage_subagents` | `host/antigravity/manage_subagents` | `action` | Requires `trusted` trajectory. Governs listing and terminating subagents. |
+| `define_subagent` | `host/antigravity/define_subagent` | N/A | Requires `trusted` trajectory. Prevents unverified subagent role creation. |
+| `ask_question` | `host/antigravity/ask_question` | `questions` | Requires `trusted` trajectory. Prevents prompt injection from presenting spoofed dialogs. |
+| `manage_task` | `host/antigravity/manage_task` | `action` | Requires `trusted` trajectory. Controls background tasks. |
+| `schedule` | `host/antigravity/schedule` | `prompt` | Requires `trusted` trajectory. Controls timer/cron tasks. |
+| `generate_image` | `host/antigravity/generate_image` | `prompt` | Requires `trusted` trajectory. |
 | `execute_remedy_plan`| `mcp__appa__execute_remedy_plan` | `offer_id` | Authorizes retry of blocked calls upon approved remedy. |
 
 ---
@@ -129,19 +159,25 @@ To run the automated verification test suite:
 python -m unittest tests/test_suite.py
 ```
 
-The 13 automated tests verify:
+The 18 automated tests verify:
 1. Denied calls never execute (undeclared tools, untrusted shell commands, credential exfiltration).
 2. Blocked / sensitive results never reach the model (`redact-secrets` masks keys, indeterminate runs withheld).
 3. Runtime errors stop the flow (fail-closed if server down).
 4. Remedy flow works (`execute_remedy_plan` with `offer_id` unblocks retry).
-5. Subagent context isolation and return schema attestation.
+5. Subagent context isolation and return schema attestation (`attest-schema`).
 6. Subagent default restrictions (shell commands in child context blocked).
 7. Trusted domain allowlist (fetching from trusted domain preserves trust, allowing subsequent commands).
 8. Workspace boundary enforcement (writing to system paths outside workspace blocked).
 9. Native Hook handler contract (`PreToolUse`).
+10. OpenAPPA CLI `describe --check` policy validation.
+11. Deterministic trace replay (`appa replay`).
+12. Schema-compliant diagnostic reporting (`openappa.yell.v1`).
+13. Battery composition via `include = [...]` in `policy_loader.py`.
+14. Complete Antigravity interactive tool governance (`ask_question`, `send_message`, etc.).
 
 ---
 
 ## License
 
 MIT
+

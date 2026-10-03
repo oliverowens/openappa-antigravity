@@ -68,4 +68,15 @@ def extract_selector_value(raw_tool: str, args: Dict[str, Any]) -> Tuple[str, st
         return "url", str(args.get("Url", ""))
     elif raw_tool == "search_web":
         return "query", str(args.get("query", ""))
+    elif raw_tool == "ask_question":
+        return "questions", str(args.get("questions", ""))
+    elif raw_tool == "send_message":
+        return "recipient", str(args.get("Recipient", ""))
+    elif raw_tool in ("manage_subagents", "manage_task"):
+        return "action", str(args.get("Action", ""))
+    elif raw_tool in ("schedule", "generate_image"):
+        return "prompt", str(args.get("Prompt", ""))
+    elif raw_tool == "execute_remedy_plan":
+        return "offer_id", str(args.get("offer_id", ""))
     return "", ""
+

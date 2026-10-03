@@ -1,0 +1,16 @@
+{
+  "openappa-gate": {
+    "PreToolUse": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python ../adapter/hooks_handler.py",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  }
+}

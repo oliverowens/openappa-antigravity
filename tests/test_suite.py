@@ -26,9 +26,12 @@ sys.path.insert(0, str(ROOT_DIR))
 from runtime.engine import AppaEngine
 from runtime.server import AppaServer
 from runtime.policy_loader import load_policy, load_policy_and_config
+import argparse
 from adapter.client import AppaClient, AppaClientError
 from adapter.agent_loop import OpenAppaAgentLoop, InterceptedExecutionError
 from adapter.hooks_handler import handle_pre_tool_use
+from adapter.cli import cmd_describe, cmd_replay, cmd_yell
+
 
 
 class TestOpenAppaAntigravity(unittest.TestCase):
@@ -396,6 +399,112 @@ class TestOpenAppaAntigravity(unittest.TestCase):
         self.assertFalse(write_ran, "Security violation: Wrote to system path outside workspace!")
         self.assertIn("outside permitted workspace boundaries", msg)
 
+    # ==========================================================================
+    # Requirement 6: CLI & Verification Tooling (describe, replay, yell)
+    # ==========================================================================
+
+    def test_cli_describe_check(self):
+        """OpenAPPA CLI describe --check must validate the policy and return code 0."""
+        args = argparse.Namespace(config=str(ROOT_DIR / "policy" / "appa.toml"), check=True)
+        ret = cmd_describe(args)
+        self.assertEqual(ret, 0)
+
+    def test_cli_replay(self):
+        """OpenAPPA CLI replay must verify recorded traces against policy deterministically."""
+        trace_file = ROOT_DIR / "policy-tests" / "trajectories_replay.json"
+        args = argparse.Namespace(config=str(ROOT_DIR / "policy" / "appa.toml"), trace=str(trace_file))
+        ret = cmd_replay(args)
+        self.assertEqual(ret, 0)
+
+    def test_cli_yell(self):
+        """OpenAPPA CLI yell must generate a report conforming to openappa.yell.v1."""
+        captured = io.StringIO()
+        old_stdout = sys.stdout
+        try:
+            sys.stdout = captured
+            args = argparse.Namespace(config=str(ROOT_DIR / "policy" / "appa.toml"), output=None)
+            ret = cmd_yell(args)
+        finally:
+            sys.stdout = old_stdout
+
+        self.assertEqual(ret, 0)
+        report = json.loads(captured.getvalue())
+        self.assertEqual(report.get("$schema"), "openappa.yell.v1")
+        self.assertEqual(report.get("adapter"), "antigravity")
+        self.assertIn("policy_key", report)
+        self.assertIn("diagnostics", report)
+
+    def test_policy_loader_include_support(self):
+        """Policy loader must correctly resolve include = [...] directives for battery composition."""
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmpdir:
+            battery_path = Path(tmpdir) / "sub_battery.toml"
+            battery_path.write_text(
+                """
+                [policy]
+                version = 2
+                [[policy.tool]]
+                name = "mcp/github/create_issue"
+                requires = { trust = "trusted" }
+                delta = {}
+                """,
+                encoding="utf-8",
+            )
+
+            main_path = Path(tmpdir) / "main.toml"
+            main_path.write_text(
+                f"""
+                [policy]
+                version = 2
+                include = ["sub_battery.toml"]
+                [[policy.tool]]
+                name = "host/antigravity/run_command"
+                delta = {{}}
+                """,
+                encoding="utf-8",
+            )
+
+            rules, _ = load_policy_and_config(main_path)
+            rule_names = [r.canonical_name for r in rules]
+            self.assertIn("host/antigravity/run_command", rule_names)
+            self.assertIn("mcp/github/create_issue", rule_names)
+
+    def test_antigravity_interactive_tools_coverage(self):
+        """Antigravity interactive tools (ask_question, send_message, manage_task) are governed by policy."""
+        # 1. ask_question succeeds on trusted trajectory
+        asked = False
+
+        def ask_fn(args):
+            nonlocal asked
+            asked = True
+            return "User confirmed"
+
+        ok_ask, res_ask = self.agent.execute_tool_safely(
+            raw_name="ask_question",
+            arguments={"questions": [{"question": "Proceed?", "options": ["Yes", "No"]}]},
+            tool_fn=ask_fn,
+        )
+        self.assertTrue(ok_ask)
+        self.assertTrue(asked)
+
+        # 2. Ingest untrusted data to degrade trust
+        self.agent.execute_tool_safely(
+            raw_name="read_url_content",
+            arguments={"Url": "https://untrusted-site.com/payload"},
+            tool_fn=lambda args: "attacker injection",
+        )
+
+        # 3. ask_question is blocked on suspicious trajectory to stop spoofing
+        asked_again = False
+        ok_blocked, res_blocked = self.agent.execute_tool_safely(
+            raw_name="ask_question",
+            arguments={"questions": [{"question": "Grant admin?", "options": ["Yes", "No"]}]},
+            tool_fn=lambda args: "spoofed",
+        )
+        self.assertFalse(ok_blocked)
+        self.assertIn("below required floor", res_blocked)
+
 
 if __name__ == "__main__":
     unittest.main()
+

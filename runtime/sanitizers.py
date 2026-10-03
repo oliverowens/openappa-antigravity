@@ -61,6 +61,11 @@ def redact_secrets(text: str) -> Tuple[str, bool]:
     return result, redacted
 
 
+def canonical_json(data: Any) -> str:
+    """RFC 8785 Canonical JSON output: sorted keys, compact separators, UTF-8."""
+    return json.dumps(data, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+
+
 def attest_schema(payload: str, schema: Dict[str, Any]) -> Tuple[bool, Optional[str], Optional[str]]:
     """
     Validates payload against schema and returns canonical JSON representation.
@@ -96,5 +101,7 @@ def attest_schema(payload: str, schema: Dict[str, Any]) -> Tuple[bool, Optional[
                 return False, None, f"Property '{k}' must be one of {props[k]['enum']}"
 
     # Canonical sorted JSON output
-    canonical = json.dumps(data, sort_keys=True, separators=(",", ":"))
+    canonical = canonical_json(data)
     return True, canonical, None
+
+

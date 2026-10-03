@@ -38,7 +38,15 @@ Antigravity native tools map to OpenAPPA canonical identifiers:
 | `read_url_content` | `host/antigravity/read_url_content` | `url` | Requires `public` audience. Ingested content degrades trajectory to `suspicious`. |
 | `search_web` | `host/antigravity/search_web` | `query` | Requires `public` audience. Search results degrade trajectory to `suspicious`. |
 | `invoke_subagent` | `host/antigravity/invoke_subagent` | N/A | Starts quarantined child context. Returns require `attest-schema` validation. |
+| `send_message` | `host/antigravity/send_message` | `recipient` | Requires `trusted` trajectory. Inter-agent communication. |
+| `manage_subagents` | `host/antigravity/manage_subagents` | `action` | Requires `trusted` trajectory. Listing and managing subagent lifecycle. |
+| `define_subagent` | `host/antigravity/define_subagent` | N/A | Requires `trusted` trajectory. |
+| `ask_question` | `host/antigravity/ask_question` | `questions` | Requires `trusted` trajectory. Interactive UI prompt. |
+| `manage_task` | `host/antigravity/manage_task` | `action` | Requires `trusted` trajectory. Background task management. |
+| `schedule` | `host/antigravity/schedule` | `prompt` | Requires `trusted` trajectory. Timer and cron scheduling. |
+| `generate_image` | `host/antigravity/generate_image` | `prompt` | Requires `trusted` trajectory. |
 | `execute_remedy_plan` | `mcp__appa__execute_remedy_plan` | `offer_id` | Control tool: authorizes retry of blocked calls upon approved remedy. |
+
 
 ## Operational Modes
 

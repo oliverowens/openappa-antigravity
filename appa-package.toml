@@ -1,0 +1,20 @@
+[package]
+name = "openappa-antigravity"
+version = "0.1.0"
+description = "Canonical OpenAPPA battery and Information-Flow Control adapter for Google Antigravity"
+hosts = ["antigravity"]
+policy = "policy/appa.toml"
+
+[package.scripts]
+hooks_handler = "adapter/hooks_handler.py"
+agent_loop = "adapter/agent_loop.py"
+runtime_server = "runtime/server.py"
+cli = "adapter/cli.py"
+
+[package.setup]
+instructions = """
+1. Enable native hooks via .agents/hooks.json to enforce Layer A pre-execution gating.
+2. Launch the OpenAPPA runtime server daemon: python runtime/server.py
+3. For Python harnesses, wrap execution with OpenAppaAgentLoop in adapter/agent_loop.py.
+4. Verify policy validity using: python -m adapter.cli describe --check
+"""
