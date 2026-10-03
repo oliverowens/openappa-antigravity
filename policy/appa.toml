@@ -1,0 +1,165 @@
+# OpenAPPA Security Policy for Antigravity Agent
+#
+# Rules are evaluated top-down; the first matching rule takes precedence.
+# Untrusted inputs (such as web fetches) lower trajectory trust to 'suspicious'.
+# Sensitive credential reads narrow trajectory audience to 'self'.
+# Dangerous tools (such as run_command, file writes) require 'trusted' trust.
+# Outbound network requests require 'public' audience (preventing exfiltration).
+
+[policy]
+version = 2
+description = "Antigravity OpenAPPA Information-Flow Control Policy"
+
+# ==============================================================================
+# 1. Shell Command Execution (run_command)
+# ==============================================================================
+
+# Commands accessing sensitive credentials or secret stores narrow audience to 'self'
+[[policy.tool]]
+name = "host/antigravity/run_command(command:*.env*)"
+delta = { audience = ["self"] }
+tags = ["credentials"]
+
+[[policy.tool]]
+name = "host/antigravity/run_command(command:*.ssh/*)"
+delta = { audience = ["self"] }
+tags = ["credentials"]
+
+[[policy.tool]]
+name = "host/antigravity/run_command(command:*.aws/*)"
+delta = { audience = ["self"] }
+tags = ["credentials"]
+
+[[policy.tool]]
+name = "host/antigravity/run_command(command:*token*)"
+delta = { audience = ["self"] }
+tags = ["credentials"]
+
+[[policy.tool]]
+name = "host/antigravity/run_command(command:*id_rsa*)"
+delta = { audience = ["self"] }
+tags = ["credentials"]
+
+[[policy.tool]]
+name = "host/antigravity/run_command(command:*id_ed25519*)"
+delta = { audience = ["self"] }
+tags = ["credentials"]
+
+# General shell execution requires trusted data (stops prompt injection from web content)
+[[policy.tool]]
+name = "host/antigravity/run_command"
+requires = { trust = "trusted" }
+delta = {}
+description = "Executes arbitrary shell commands; requires trusted trajectory."
+
+# ==============================================================================
+# 2. File Reading (view_file)
+# ==============================================================================
+
+# Reading sensitive files narrows audience to 'self'
+[[policy.tool]]
+name = "host/antigravity/view_file(path:*.env*)"
+delta = { audience = ["self"] }
+tags = ["credentials"]
+
+[[policy.tool]]
+name = "host/antigravity/view_file(path:*.ssh/*)"
+delta = { audience = ["self"] }
+tags = ["credentials"]
+
+[[policy.tool]]
+name = "host/antigravity/view_file(path:*.aws/*)"
+delta = { audience = ["self"] }
+tags = ["credentials"]
+
+[[policy.tool]]
+name = "host/antigravity/view_file(path:*token*)"
+delta = { audience = ["self"] }
+tags = ["credentials"]
+
+# General file reading leaves audience unchanged, preserves trust
+[[policy.tool]]
+name = "host/antigravity/view_file"
+delta = {}
+description = "Reads files within the repository/workspace."
+
+# ==============================================================================
+# 3. File Writing & Modifications (write_to_file, replace_file_content)
+# ==============================================================================
+
+[[policy.tool]]
+name = "host/antigravity/write_to_file"
+requires = { trust = "trusted" }
+delta = {}
+description = "Writes new files or overwrites existing files."
+
+[[policy.tool]]
+name = "host/antigravity/replace_file_content"
+requires = { trust = "trusted" }
+delta = {}
+description = "Edits contiguous lines in existing files."
+
+# ==============================================================================
+# 4. Web Fetch & Search (read_url_content, search_web)
+# ==============================================================================
+
+# Reading web content requires public audience (prevents exfiltration via URL)
+# and degrades trajectory trust to 'suspicious' (untrusted external data).
+[[policy.tool]]
+name = "host/antigravity/read_url_content"
+requires = { audience = { contains = ["public"] } }
+delta = { trust = "suspicious" }
+description = "Fetches external web content over HTTP."
+
+[[policy.tool]]
+name = "host/antigravity/search_web"
+requires = { audience = { contains = ["public"] } }
+delta = { trust = "suspicious" }
+description = "Performs web search queries."
+
+# ==============================================================================
+# 5. Subagents (invoke_subagent)
+# ==============================================================================
+
+[[policy.tool]]
+name = "host/antigravity/invoke_subagent"
+delta = {}
+description = "Spawns child subagents with quarantined trajectory context."
+
+# ==============================================================================
+# 6. Remedy Control Tool (execute_remedy_plan)
+# ==============================================================================
+
+[[policy.tool]]
+name = "mcp__appa__execute_remedy_plan"
+delta = {}
+description = "Applies approved remedy plans and authorizes retries."
+
+[[policy.tool]]
+name = "appa/execute_remedy_plan"
+delta = {}
+description = "Canonical remedy execution tool."
+
+# ==============================================================================
+# 7. Built-in Sanitizers
+# ==============================================================================
+
+[[policy.sanitizer]]
+name = "redact-secrets"
+on = ["tool_result"]
+description = "Masks secrets and credentials in tool outputs, permitting audience upgrade from self to public."
+
+[policy.sanitizer.redact-secrets.permits]
+audience = { from = ["self"], to = ["public"] }
+
+[[policy.sanitizer]]
+name = "attest-schema"
+on = ["child_end"]
+description = "Validates subagent return values against JSON schema, permitting trust upgrade from suspicious to trusted."
+
+[policy.sanitizer.attest-schema.permits]
+trust = { from = "suspicious", to = "trusted" }
+
+[externals]
+timeout_ms = 3000
+max_body_bytes = 65536
