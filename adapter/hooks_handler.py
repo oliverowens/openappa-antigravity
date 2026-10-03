@@ -27,7 +27,7 @@ Usage in hooks.json:
 from __future__ import annotations
 import json
 import sys
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 # Support relative and standalone execution
 try:
@@ -51,7 +51,11 @@ def _ensure_runtime_running(client: Optional[AppaClient] = None) -> None:
     if server_script.is_file():
         try:
             creationflags = getattr(subprocess, "CREATE_NO_WINDOW", 0) | getattr(subprocess, "DETACHED_PROCESS", 0)
-            subprocess.Popen([sys.executable, str(server_script)], creationflags=creationflags)
+            subprocess.Popen(
+                [sys.executable, str(server_script)],
+                cwd=str(server_script.parent.parent),
+                creationflags=creationflags
+            )
             time.sleep(0.6)
         except Exception:
             pass

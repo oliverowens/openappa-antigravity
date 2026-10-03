@@ -7,7 +7,7 @@
           {
             "type": "command",
             "command": "python ../adapter/hooks_handler.py",
-            "timeout": 10
+            "timeout": 15
           }
         ]
       }

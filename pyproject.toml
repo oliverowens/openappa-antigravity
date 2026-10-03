@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "openappa-antigravity"
-version = "0.1.0"
+version = "0.2.0"
 description = "Canonical OpenAPPA battery and Information-Flow Control adapter for Google Antigravity"
 readme = "README.md"
 license = { text = "MIT" }
@@ -26,6 +26,7 @@ classifiers = [
 
 [project.scripts]
 appa = "adapter.cli:main"
+openappa-hook = "adapter.hooks_handler:main"
 
 [tool.setuptools.packages.find]
 include = ["adapter*", "runtime*"]

@@ -215,6 +215,103 @@ def cmd_yell(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_hook(args: argparse.Namespace) -> int:
+    """Invokes the lifecycle hook handler over stdin/stdout."""
+    try:
+        from adapter.hooks_handler import main as hooks_main
+    except ImportError:
+        from .hooks_handler import main as hooks_main
+    hooks_main()
+    return 0
+
+
+def cmd_install(args: argparse.Namespace) -> int:
+    """Installs portable hook configuration into global or workspace hooks.json."""
+    import shutil
+
+    if args.workspace:
+        hooks_dir = Path.cwd() / ".agents"
+        hooks_file = hooks_dir / "hooks.json"
+        scope = "workspace"
+        default_cmd = "python ../adapter/hooks_handler.py"
+    else:
+        hooks_dir = Path.home() / ".gemini" / "config"
+        hooks_file = hooks_dir / "hooks.json"
+        scope = "global"
+        # Determine portable command
+        if shutil.which("appa"):
+            default_cmd = "appa hook"
+        elif shutil.which("openappa-hook"):
+            default_cmd = "openappa-hook"
+        else:
+            default_cmd = "python -m adapter.hooks_handler"
+
+    command_str = args.custom_command if args.custom_command else default_cmd
+
+    hooks_dir.mkdir(parents=True, exist_ok=True)
+    data: Dict[str, Any] = {}
+    if hooks_file.is_file():
+        try:
+            data = json.loads(hooks_file.read_text(encoding="utf-8"))
+        except Exception:
+            data = {}
+
+    hook_entry = {
+        "matcher": "*",
+        "hooks": [
+            {
+                "type": "command",
+                "command": command_str,
+                "timeout": 15,
+            }
+        ],
+    }
+
+    if "openappa-gate" not in data or not isinstance(data["openappa-gate"], dict):
+        data["openappa-gate"] = {}
+
+    data["openappa-gate"]["PreToolUse"] = [hook_entry]
+
+    hooks_file.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+    print("==================================================")
+    print(" OpenAPPA Hook Installation")
+    print("==================================================")
+    print(f"Scope       : {scope}")
+    print(f"Config File : {hooks_file}")
+    print(f"Command     : {command_str}")
+    print("Status      : INSTALLED")
+    print("==================================================")
+    return 0
+
+
+def cmd_uninstall(args: argparse.Namespace) -> int:
+    """Removes openappa-gate from global or workspace hooks.json."""
+    if args.workspace:
+        hooks_file = Path.cwd() / ".agents" / "hooks.json"
+        scope = "workspace"
+    else:
+        hooks_file = Path.home() / ".gemini" / "config" / "hooks.json"
+        scope = "global"
+
+    if not hooks_file.is_file():
+        print(f"[OpenAPPA] No hook configuration found at: {hooks_file}")
+        return 0
+
+    try:
+        data = json.loads(hooks_file.read_text(encoding="utf-8"))
+    except Exception as e:
+        print(f"[OpenAPPA ERROR] Failed to parse {hooks_file}: {e}", file=sys.stderr)
+        return 1
+
+    if "openappa-gate" in data:
+        del data["openappa-gate"]
+        hooks_file.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+        print(f"[OpenAPPA] Successfully uninstalled {scope} hook from: {hooks_file}")
+    else:
+        print(f"[OpenAPPA] No 'openappa-gate' found in: {hooks_file}")
+    return 0
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(prog="appa", description="OpenAPPA CLI for Antigravity")
     subparsers = parser.add_subparsers(dest="command")
@@ -234,6 +331,18 @@ def main() -> None:
     p_yell.add_argument("--config", type=str, help="Path to policy TOML file")
     p_yell.add_argument("--output", "-o", type=str, help="Optional output file path")
 
+    # hook
+    subparsers.add_parser("hook", help="Run the lifecycle hook handler (stdin/stdout)")
+
+    # install
+    p_install = subparsers.add_parser("install", help="Install portable Antigravity lifecycle hooks")
+    p_install.add_argument("--workspace", action="store_true", help="Install to workspace (.agents/hooks.json) instead of global (~/.gemini/config/hooks.json)")
+    p_install.add_argument("--cmd", "--command", dest="custom_command", type=str, help="Custom hook command string to register")
+
+    # uninstall
+    p_uninstall = subparsers.add_parser("uninstall", help="Remove Antigravity lifecycle hooks")
+    p_uninstall.add_argument("--workspace", action="store_true", help="Uninstall from workspace (.agents/hooks.json) instead of global")
+
     args = parser.parse_args()
 
     if args.command == "describe":
@@ -242,6 +351,12 @@ def main() -> None:
         sys.exit(cmd_replay(args))
     elif args.command == "yell":
         sys.exit(cmd_yell(args))
+    elif args.command == "hook":
+        sys.exit(cmd_hook(args))
+    elif args.command == "install":
+        sys.exit(cmd_install(args))
+    elif args.command == "uninstall":
+        sys.exit(cmd_uninstall(args))
     else:
         parser.print_help()
         sys.exit(0)

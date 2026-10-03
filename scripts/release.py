@@ -77,6 +77,13 @@ def update_version_files(new_ver: str) -> None:
     if ad_init.exists():
         ad_init.write_text(f'"""\nOpenAPPA Antigravity Adapter package.\n"""\n\n__version__ = "{new_ver}"\n', encoding="utf-8")
 
+    # 5. README.md badge
+    readme_path = ROOT_DIR / "README.md"
+    if readme_path.exists():
+        content = readme_path.read_text(encoding="utf-8")
+        content = re.sub(r'version-[\d\.]+-informational', f'version-{new_ver}-informational', content, count=1)
+        readme_path.write_text(content, encoding="utf-8")
+
 
 def run_checks() -> bool:
     print("[Release] Running pre-release verification...")

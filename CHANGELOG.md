@@ -10,6 +10,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - Automated release workflows and branch protection.
 
+## [0.2.0] - 2026-10-04
+
+### Added
+- **Portable CLI Hook Invocation (`appa hook`)**: Added `appa hook` subcommand allowing hook execution without absolute file paths or OS-specific paths.
+- **Hook Lifecycle Management (`appa install` / `appa uninstall`)**: Added dynamic installer to configure portable lifecycle hooks in global (`~/.gemini/config/hooks.json`) or workspace (`.agents/hooks.json`) scopes.
+- **Console Script Entry Point**: Added `openappa-hook` console script in `pyproject.toml`.
+
+### Changed
+- Removed machine-static absolute paths from hook configurations, enabling seamless cross-platform deployment across Windows, macOS, and Linux.
+- Added explicit working directory resolution (`cwd`) when auto-spawning runtime server subprocesses.
+
 ## [0.1.0] - 2026-10-03
 
 ### Added
