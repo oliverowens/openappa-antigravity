@@ -2,7 +2,9 @@
 
 [![OpenAPPA](https://img.shields.io/badge/OpenAPPA-v1-blue.svg)](https://github.com/archestra-ai/OpenAPPA)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-brightgreen.svg)](https://www.python.org/)
+[![Version](https://img.shields.io/badge/version-0.1.0-informational.svg)](CHANGELOG.md)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
 
 ## About
 
