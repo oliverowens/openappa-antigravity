@@ -256,7 +256,7 @@ def cmd_install(args: argparse.Namespace) -> int:
         except Exception:
             data = {}
 
-    hook_entry = {
+    hook_entry_tool = {
         "matcher": "*",
         "hooks": [
             {
@@ -267,10 +267,19 @@ def cmd_install(args: argparse.Namespace) -> int:
         ],
     }
 
+    hook_entry_invoc = [
+        {
+            "type": "command",
+            "command": command_str,
+            "timeout": 15,
+        }
+    ]
+
     if "openappa-gate" not in data or not isinstance(data["openappa-gate"], dict):
         data["openappa-gate"] = {}
 
-    data["openappa-gate"]["PreToolUse"] = [hook_entry]
+    data["openappa-gate"]["PreInvocation"] = hook_entry_invoc
+    data["openappa-gate"]["PreToolUse"] = [hook_entry_tool]
 
     hooks_file.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
     print("==================================================")
@@ -279,6 +288,7 @@ def cmd_install(args: argparse.Namespace) -> int:
     print(f"Scope       : {scope}")
     print(f"Config File : {hooks_file}")
     print(f"Command     : {command_str}")
+    print("Hooks Added : PreInvocation (auto-warmup), PreToolUse (policy gate)")
     print("Status      : INSTALLED")
     print("==================================================")
     return 0
@@ -312,6 +322,104 @@ def cmd_uninstall(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_status(args: argparse.Namespace) -> int:
+    import urllib.request
+    port = getattr(args, "port", None) or 8788
+    host = getattr(args, "host", None) or "127.0.0.1"
+    url = f"http://{host}:{port}"
+
+    print("==================================================")
+    print(" OpenAPPA Runtime Status")
+    print("==================================================")
+    print(f"Endpoint   : {url}")
+    try:
+        req = urllib.request.Request(f"{url}/status")
+        with urllib.request.urlopen(req, timeout=1.5) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+            print("Status     : ONLINE")
+            print(f"PID        : {data.get('pid', 'unknown')}")
+            print(f"Policy Key : {data.get('policy_key', 'unknown')}")
+            print(f"Rules      : {data.get('rules', 'unknown')}")
+            print(f"Sessions   : {data.get('trajectories', 0)}")
+            print("==================================================")
+            return 0
+    except Exception:
+        try:
+            with urllib.request.urlopen(f"{url}/health", timeout=1.0) as resp:
+                if resp.status == 200:
+                    print("Status     : ONLINE (healthy)")
+                    print("==================================================")
+                    return 0
+        except Exception:
+            pass
+        print("Status     : OFFLINE")
+        print("==================================================")
+        return 1
+
+
+def cmd_start(args: argparse.Namespace) -> int:
+    from adapter.hooks_handler import _ensure_runtime_running, is_server_healthy
+    port = getattr(args, "port", None) or 8788
+    host = getattr(args, "host", None) or "127.0.0.1"
+    url = f"http://{host}:{port}"
+
+    if is_server_healthy(f"{url}/health", timeout=0.5):
+        print(f"[OpenAPPA] Runtime server is already running on {url}")
+        return 0
+
+    print(f"[OpenAPPA] Starting OpenAPPA runtime server on {url}...")
+    success = _ensure_runtime_running(max_wait=5.0)
+    if success:
+        print(f"[OpenAPPA] Server started successfully and listening on {url}")
+        return 0
+    else:
+        print(f"[OpenAPPA ERROR] Failed to start runtime server within timeout.", file=sys.stderr)
+        return 1
+
+
+def cmd_stop(args: argparse.Namespace) -> int:
+    import urllib.request
+    import time
+    port = getattr(args, "port", None) or 8788
+    host = getattr(args, "host", None) or "127.0.0.1"
+    url = f"http://{host}:{port}"
+
+    try:
+        req = urllib.request.Request(f"{url}/shutdown", method="POST", data=b"{}")
+        with urllib.request.urlopen(req, timeout=2.0) as resp:
+            pass
+        print(f"[OpenAPPA] Sent shutdown signal to {url}")
+        time.sleep(0.5)
+        print(f"[OpenAPPA] Server stopped.")
+        return 0
+    except Exception:
+        print(f"[OpenAPPA] No active server detected on {url}")
+        return 0
+
+
+def cmd_restart(args: argparse.Namespace) -> int:
+    import urllib.request
+    port = getattr(args, "port", None) or 8788
+    host = getattr(args, "host", None) or "127.0.0.1"
+    url = f"http://{host}:{port}"
+
+    if getattr(args, "reload_only", False):
+        try:
+            req = urllib.request.Request(f"{url}/reload", method="POST", data=b"{}")
+            with urllib.request.urlopen(req, timeout=2.0) as resp:
+                data = json.loads(resp.read().decode("utf-8"))
+                print(f"[OpenAPPA] Policy reloaded successfully! New policy key: {data.get('policy_key')}")
+                return 0
+        except Exception as e:
+            print(f"[OpenAPPA ERROR] Failed to reload policy: {e}", file=sys.stderr)
+            return 1
+
+    cmd_stop(args)
+    import time
+    time.sleep(0.6)
+    return cmd_start(args)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(prog="appa", description="OpenAPPA CLI for Antigravity")
     subparsers = parser.add_subparsers(dest="command")
@@ -343,6 +451,27 @@ def main() -> None:
     p_uninstall = subparsers.add_parser("uninstall", help="Remove Antigravity lifecycle hooks")
     p_uninstall.add_argument("--workspace", action="store_true", help="Uninstall from workspace (.agents/hooks.json) instead of global")
 
+    # status
+    p_status = subparsers.add_parser("status", help="Check OpenAPPA runtime server status")
+    p_status.add_argument("--host", type=str, default="127.0.0.1", help="Server host (default: 127.0.0.1)")
+    p_status.add_argument("--port", type=int, default=8788, help="Server port (default: 8788)")
+
+    # start
+    p_start = subparsers.add_parser("start", help="Start OpenAPPA runtime server daemon")
+    p_start.add_argument("--host", type=str, default="127.0.0.1", help="Server host (default: 127.0.0.1)")
+    p_start.add_argument("--port", type=int, default=8788, help="Server port (default: 8788)")
+
+    # stop
+    p_stop = subparsers.add_parser("stop", help="Stop OpenAPPA runtime server daemon")
+    p_stop.add_argument("--host", type=str, default="127.0.0.1", help="Server host (default: 127.0.0.1)")
+    p_stop.add_argument("--port", type=int, default=8788, help="Server port (default: 8788)")
+
+    # restart
+    p_restart = subparsers.add_parser("restart", help="Restart runtime daemon or reload active policy")
+    p_restart.add_argument("--reload-only", action="store_true", help="Reload policy TOML without process restart")
+    p_restart.add_argument("--host", type=str, default="127.0.0.1", help="Server host (default: 127.0.0.1)")
+    p_restart.add_argument("--port", type=int, default=8788, help="Server port (default: 8788)")
+
     args = parser.parse_args()
 
     if args.command == "describe":
@@ -357,6 +486,14 @@ def main() -> None:
         sys.exit(cmd_install(args))
     elif args.command == "uninstall":
         sys.exit(cmd_uninstall(args))
+    elif args.command == "status":
+        sys.exit(cmd_status(args))
+    elif args.command == "start":
+        sys.exit(cmd_start(args))
+    elif args.command == "stop":
+        sys.exit(cmd_stop(args))
+    elif args.command == "restart":
+        sys.exit(cmd_restart(args))
     else:
         parser.print_help()
         sys.exit(0)

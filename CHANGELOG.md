@@ -10,6 +10,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - Automated release workflows and branch protection.
 
+## [0.3.0] - 2026-10-04
+
+### Added
+- **Proactive `PreInvocation` Auto-Warmup Hook**: Warms up and verifies runtime server health the moment a prompt is sent, before the LLM begins reasoning or proposing tools.
+- **Fail-Safe Polling & Process Lock**: Multi-process lockfile (`openappa_supervisor.lock`) and active health polling (up to 3.5s) to eliminate duplicate spawns and cold-start failures.
+- **Daemon Lifecycle Commands**: Added `appa status` (reports PID, policy key, rules, session count), `appa start`, `appa stop` (graceful `/shutdown`), and `appa restart` (`/reload` or restart).
+- **Dynamic Policy Reloading**: Upgraded `POST /reload` in `runtime/server.py` to reload `policy/appa.toml` from disk dynamically with live policy key recomputation.
+
 ## [0.2.0] - 2026-10-04
 
 ### Added

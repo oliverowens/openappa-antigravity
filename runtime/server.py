@@ -49,6 +49,16 @@ class AppaHTTPHandler(BaseHTTPRequestHandler):
             self.send_header("Content-Length", "2")
             self.end_headers()
             self.wfile.write(b"ok")
+        elif self.path == "/status":
+            import os
+            status_data = {
+                "status": "ok",
+                "pid": os.getpid(),
+                "policy_key": self.engine.policy_key,
+                "rules": len(self.engine.rules),
+                "trajectories": len(self.engine.trajectories),
+            }
+            self._send_json(200, status_data)
         elif self.path == "/policy-key":
             key_bytes = self.engine.policy_key.encode("utf-8")
             self.send_response(200)
@@ -62,7 +72,30 @@ class AppaHTTPHandler(BaseHTTPRequestHandler):
 
     def do_POST(self) -> None:
         if self.path == "/reload":
-            self._send_json(200, {"changed": True, "policy_key": self.engine.policy_key})
+            policy_path = getattr(self, "policy_path", None)
+            if not policy_path:
+                from pathlib import Path
+                policy_path = str(Path(__file__).resolve().parent.parent / "policy" / "appa.toml")
+            try:
+                new_rules, new_config = load_policy_and_config(policy_path)
+                self.engine.rules = new_rules
+                self.engine.config = new_config
+                self.engine.policy_key = self.engine._compute_policy_key()
+                self._send_json(200, {
+                    "changed": True,
+                    "policy_key": self.engine.policy_key,
+                    "rules": len(new_rules),
+                })
+            except Exception as e:
+                self._send_json(500, {"changed": False, "error": str(e)})
+            return
+        elif self.path == "/shutdown":
+            self._send_json(200, {"status": "shutting down"})
+            server_inst = getattr(self, "appa_server", None)
+            if server_inst:
+                threading.Thread(target=server_inst.stop).start()
+            else:
+                threading.Thread(target=self.server.shutdown).start()
             return
 
         if self.path != "/hook":
@@ -136,24 +169,30 @@ class AppaHTTPHandler(BaseHTTPRequestHandler):
 
 
 class AppaServer:
-    def __init__(self, engine: AppaEngine, host: str = "127.0.0.1", port: int = 8788):
+    def __init__(self, engine: AppaEngine, host: str = "127.0.0.1", port: int = 8788, policy_path: Optional[str] = None):
         self.engine = engine
         self.host = host
         self.port = port
+        self.policy_path = policy_path
         self.server: Optional[HTTPServer] = None
         self.thread: Optional[threading.Thread] = None
 
     def start(self) -> None:
-        handler = type("ConfiguredHandler", (AppaHTTPHandler,), {"engine": self.engine})
+        handler = type("ConfiguredHandler", (AppaHTTPHandler,), {
+            "engine": self.engine,
+            "policy_path": self.policy_path,
+            "appa_server": self,
+        })
         self.server = HTTPServer((self.host, self.port), handler)
         self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
         self.thread.start()
 
     def stop(self) -> None:
         if self.server:
-            self.server.shutdown()
-            self.server.server_close()
+            srv = self.server
             self.server = None
+            srv.shutdown()
+            srv.server_close()
 
 
 def run_server(host: str = "127.0.0.1", port: int = 8788, policy_path: Optional[str] = None) -> None:
@@ -165,12 +204,12 @@ def run_server(host: str = "127.0.0.1", port: int = 8788, policy_path: Optional[
 
     rules, config = load_policy_and_config(policy_path)
     engine = AppaEngine(rules=rules, config=config)
-    server = AppaServer(engine=engine, host=host, port=port)
+    server = AppaServer(engine=engine, host=host, port=port, policy_path=policy_path)
     server.start()
     print(f"[OpenAPPA] Server running on http://{host}:{port} (policy key: {engine.policy_key})")
     print("[OpenAPPA] Press Ctrl+C to stop.")
     try:
-        while True:
+        while server.server is not None:
             time.sleep(1)
     except KeyboardInterrupt:
         print("\n[OpenAPPA] Stopping server...")

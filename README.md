@@ -2,7 +2,7 @@
 
 [![OpenAPPA](https://img.shields.io/badge/OpenAPPA-v1-blue.svg)](https://github.com/archestra-ai/OpenAPPA)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-brightgreen.svg)](https://www.python.org/)
-[![Version](https://img.shields.io/badge/version-0.2.0-informational.svg)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.3.0-informational.svg)](CHANGELOG.md)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 
@@ -121,6 +121,18 @@ The repository includes a complete implementation of the canonical OpenAPPA CLI 
 ```bash
 # Validate policy configuration, verify syntax and display rules fingerprint
 python appa.py describe --check
+
+# Check runtime server status, active PID, policy key, and session counts
+python appa.py status
+
+# Start, stop, or hot-reload the OpenAPPA background daemon
+python appa.py start
+python appa.py restart --reload-only
+python appa.py stop
+
+# Install portable Antigravity lifecycle hooks (PreInvocation + PreToolUse)
+python appa.py install              # Global (~/.gemini/config/hooks.json)
+python appa.py install --workspace  # Current workspace (.agents/hooks.json)
 
 # Deterministically replay recorded event traces without running live tools
 python appa.py replay policy-tests/

@@ -11,6 +11,13 @@
           }
         ]
       }
+    ],
+    "PreInvocation": [
+      {
+        "type": "command",
+        "command": "python ../adapter/hooks_handler.py",
+        "timeout": 15
+      }
     ]
   }
 }

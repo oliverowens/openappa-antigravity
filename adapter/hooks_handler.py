@@ -40,25 +40,92 @@ except ImportError:
     from adapter.client import AppaClient, AppaClientError
 
 
-def _ensure_runtime_running(client: Optional[AppaClient] = None) -> None:
-    """Attempts to auto-launch runtime server if default localhost endpoint is offline."""
-    if client and "8788" not in client.runtime_url:
-        return
+def is_server_healthy(url: str = "http://127.0.0.1:8788/health", timeout: float = 0.4) -> bool:
+    import urllib.request
+    try:
+        with urllib.request.urlopen(url, timeout=timeout) as resp:
+            return resp.status == 200
+    except Exception:
+        return False
+
+
+def _ensure_runtime_running(client: Optional[AppaClient] = None, max_wait: float = 3.5) -> bool:
+    """Ensures runtime server is active, auto-spawning detached if offline with a lock to prevent duplicate instances."""
+    runtime_url = client.runtime_url if client else "http://127.0.0.1:8788"
+    if "8788" not in runtime_url:
+        return is_server_healthy(f"{runtime_url}/health", timeout=1.0)
+
+    health_url = f"{runtime_url}/health"
+    if is_server_healthy(health_url, timeout=0.25):
+        return True
+
+    import os
     import subprocess
+    import tempfile
     import time
     from pathlib import Path
-    server_script = Path(__file__).resolve().parent.parent / "runtime" / "server.py"
-    if server_script.is_file():
+
+    lock_file = Path(tempfile.gettempdir()) / "openappa_supervisor.lock"
+    acquired = False
+    lock_fd = None
+    try:
+        lock_fd = os.open(str(lock_file), os.O_CREAT | os.O_EXCL | os.O_RDWR)
+        acquired = True
+    except OSError:
+        # Another process holds the lock; wait up to max_wait for it to become healthy
+        start_wait = time.time()
+        while time.time() - start_wait < max_wait:
+            time.sleep(0.1)
+            if is_server_healthy(health_url, timeout=0.2):
+                return True
+        # If still offline after waiting, assume stale lock and acquire
         try:
-            creationflags = getattr(subprocess, "CREATE_NO_WINDOW", 0) | getattr(subprocess, "DETACHED_PROCESS", 0)
-            subprocess.Popen(
-                [sys.executable, str(server_script)],
-                cwd=str(server_script.parent.parent),
-                creationflags=creationflags
-            )
-            time.sleep(0.6)
+            lock_file.unlink(missing_ok=True)
+            lock_fd = os.open(str(lock_file), os.O_CREAT | os.O_EXCL | os.O_RDWR)
+            acquired = True
         except Exception:
             pass
+
+    try:
+        if is_server_healthy(health_url, timeout=0.2):
+            return True
+
+        server_script = Path(__file__).resolve().parent.parent / "runtime" / "server.py"
+        cwd_dir = str(server_script.parent.parent) if server_script.is_file() else None
+
+        creationflags = 0
+        if sys.platform == "win32":
+            creationflags = getattr(subprocess, "CREATE_NO_WINDOW", 0) | getattr(subprocess, "DETACHED_PROCESS", 0)
+
+        cmd = [sys.executable, str(server_script)] if server_script.is_file() else [sys.executable, "-m", "runtime.server"]
+
+        try:
+            subprocess.Popen(
+                cmd,
+                cwd=cwd_dir,
+                creationflags=creationflags,
+                start_new_session=(sys.platform != "win32"),
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+        except Exception:
+            pass
+
+        # Poll health until ready
+        poll_start = time.time()
+        while time.time() - poll_start < max_wait:
+            time.sleep(0.1)
+            if is_server_healthy(health_url, timeout=0.2):
+                return True
+        return False
+    finally:
+        if acquired and lock_fd is not None:
+            try:
+                os.close(lock_fd)
+                lock_file.unlink(missing_ok=True)
+            except Exception:
+                pass
 
 
 def handle_pre_tool_use(payload: Dict[str, Any], client: AppaClient) -> Dict[str, Any]:
@@ -78,7 +145,7 @@ def handle_pre_tool_use(payload: Dict[str, Any], client: AppaClient) -> Dict[str
             call_id=f"step_{step_idx}_{raw_name}",
         )
     except AppaClientError:
-        # Attempt auto-launching server if offline and targeting default 8788, then retry once
+        # Attempt auto-launching server with active polling if offline, then retry once
         _ensure_runtime_running(client)
         try:
             decision = client.tool_call(
@@ -133,8 +200,12 @@ def main() -> None:
     if "toolCall" in payload:
         result = handle_pre_tool_use(payload, client)
         print(json.dumps(result))
+    elif "invocationNum" in payload:
+        # PreInvocation hook: Proactive auto-warmup before model starts reasoning
+        _ensure_runtime_running(client)
+        print(json.dumps({}))
     else:
-        # PostToolUse, PreInvocation, or Stop
+        # PostToolUse, PostInvocation, or Stop
         print(json.dumps({}))
 
 
