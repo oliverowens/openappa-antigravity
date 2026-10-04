@@ -51,8 +51,13 @@ class AppaHTTPHandler(BaseHTTPRequestHandler):
             self.wfile.write(b"ok")
         elif self.path == "/status":
             import os
+            try:
+                from runtime import __version__ as runtime_version
+            except ImportError:
+                runtime_version = "0.4.0"
             status_data = {
                 "status": "ok",
+                "version": runtime_version,
                 "pid": os.getpid(),
                 "policy_key": self.engine.policy_key,
                 "rules": len(self.engine.rules),

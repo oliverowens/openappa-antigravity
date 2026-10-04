@@ -337,6 +337,8 @@ def cmd_status(args: argparse.Namespace) -> int:
         with urllib.request.urlopen(req, timeout=1.5) as resp:
             data = json.loads(resp.read().decode("utf-8"))
             print("Status     : ONLINE")
+            if data.get("version"):
+                print(f"Version    : v{data['version']}")
             print(f"PID        : {data.get('pid', 'unknown')}")
             print(f"Policy Key : {data.get('policy_key', 'unknown')}")
             print(f"Rules      : {data.get('rules', 'unknown')}")
