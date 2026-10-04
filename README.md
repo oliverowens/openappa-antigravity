@@ -19,6 +19,22 @@ OpenAPPA protects agents from prompt injection, untrusted web execution, and dat
 
 ---
 
+## Installation
+
+Install `openappa-antigravity` into your Python environment (Python 3.11+ required):
+
+```bash
+# Install from source in editable mode:
+git clone https://github.com/oliverowens/openappa-antigravity.git
+cd openappa-antigravity
+pip install -e .
+
+# Or install directly from PyPI (once published):
+pip install openappa-antigravity
+```
+
+---
+
 ## Architecture & Integration Layers
 
 Antigravity operates with a **dual-layer integration**:
@@ -213,7 +229,15 @@ The 22 automated tests verify:
 
 ---
 
+## Contributing & Security
+
+* **Contributing**: Contributions are welcome! Please read our [Contributing Guidelines](CONTRIBUTING.md) and [Code of Conduct](CODE_OF_CONDUCT.md).
+* **Security Policy**: For responsible vulnerability disclosure instructions, please consult our [Security Policy](SECURITY.md).
+
+---
+
 ## License
 
-MIT
+This project is licensed under the [MIT License](LICENSE).
+
 
