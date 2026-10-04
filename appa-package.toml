@@ -1,6 +1,6 @@
 [package]
 name = "openappa-antigravity"
-version = "0.3.0"
+version = "0.4.0"
 description = "Canonical OpenAPPA battery and Information-Flow Control adapter for Google Antigravity"
 hosts = ["antigravity"]
 policy = "policy/appa.toml"

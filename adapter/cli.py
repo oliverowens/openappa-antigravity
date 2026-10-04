@@ -84,7 +84,7 @@ def cmd_replay(args: argparse.Namespace) -> int:
     if trace_path.is_file():
         trace_files = [trace_path]
     else:
-        trace_files = sorted(list(trace_path.glob("*.json")) + list(trace_path.glob("*.jsonl")))
+        trace_files = sorted([f for f in list(trace_path.glob("*.json")) + list(trace_path.glob("*.jsonl")) if not f.name.startswith("latest")])
 
     if not trace_files:
         print(f"[OpenAPPA ERROR] No JSON/JSONL trace files found in {trace_path}", file=sys.stderr)
@@ -420,6 +420,141 @@ def cmd_restart(args: argparse.Namespace) -> int:
     return cmd_start(args)
 
 
+def cmd_audit(args: argparse.Namespace) -> int:
+    from runtime.audit import AuditLogger
+
+    action = getattr(args, "audit_action", None) or "status"
+    workspace = getattr(args, "workspace", None) or Path.cwd()
+    config_path = getattr(args, "config", None) or ROOT_DIR / "policy" / "appa.toml"
+
+    # Load config to get default audit settings
+    audit_enabled = True
+    audit_dir = ".appa_audit"
+    if Path(config_path).is_file():
+        try:
+            _, cfg = load_policy_and_config(Path(config_path))
+            audit_enabled = getattr(cfg, "audit_enabled", True)
+            audit_dir = getattr(cfg, "audit_dir", ".appa_audit")
+        except Exception:
+            pass
+
+    logger = AuditLogger(workspace_dir=workspace, audit_dirname=audit_dir, enabled=audit_enabled)
+
+    if action == "status":
+        print("==================================================")
+        print(" OpenAPPA Audit Subsystem Status")
+        print("==================================================")
+        print(f"Audit Enabled    : {logger.enabled} (toggle via [policy.audit].enabled or OPENAPPA_AUDIT)")
+        print(f"Audit Directory  : {logger.audit_dir}")
+        print(f"Audit Dir Exists : {logger.audit_dir.is_dir()}")
+        sessions = logger.list_sessions()
+        total_events = sum(s["event_count"] for s in sessions)
+        total_blocked = sum(s["blocked"] for s in sessions)
+        total_allowed = sum(s["allowed"] for s in sessions)
+        total_redacted = sum(s["redacted"] for s in sessions)
+        print(f"Total Sessions   : {len(sessions)}")
+        print(f"Total Decisions  : {total_events} (Allowed: {total_allowed}, Blocked: {total_blocked}, Redacted: {total_redacted})")
+        if sessions:
+            print(f"Latest Session   : {sessions[0]['session_id']} ({sessions[0]['event_count']} events)")
+        print("--------------------------------------------------")
+        print("Commands:")
+        print("  appa audit list              - List all recorded audit sessions")
+        print("  appa audit view [session_id] - Review decisions and policy triggers for a session")
+        print("  appa audit enable|disable    - Toggle audit logging in policy configuration")
+        print("==================================================")
+        return 0
+
+    elif action == "list":
+        sessions = logger.list_sessions()
+        if not sessions:
+            print(f"[OpenAPPA Audit] No audit sessions found in {logger.audit_dir}")
+            return 0
+
+        print(f"=== OpenAPPA Audit Sessions ({len(sessions)}) in {logger.audit_dir} ===")
+        print(f"{'Session ID':<36} {'Events':<8} {'Allowed':<9} {'Blocked':<9} {'Redacted':<9} {'Started At'}")
+        print("-" * 90)
+        for s in sessions:
+            sid = s["session_id"]
+            if len(sid) > 34:
+                sid = sid[:31] + "..."
+            ts = s["first_time"] or "unknown"
+            if "T" in ts:
+                ts = ts.split(".")[0].replace("T", " ")
+            print(f"{sid:<36} {s['event_count']:<8} {s['allowed']:<9} {s['blocked']:<9} {s['redacted']:<9} {ts}")
+        return 0
+
+    elif action in ("view", "show"):
+        session_arg = getattr(args, "session_id", None)
+        events = logger.read_session_events(session_arg)
+        if not events:
+            msg = f"Session '{session_arg}'" if session_arg else "Latest session"
+            print(f"[OpenAPPA Audit] {msg} not found or contains no events in {logger.audit_dir}")
+            return 1
+
+        first_ev = events[0]
+        sid = first_ev.get("session_id", session_arg or "latest")
+        print("==================================================")
+        print(f" OpenAPPA Audit Review: Session {sid}")
+        print("==================================================")
+        print(f"Events recorded: {len(events)}\n")
+
+        for idx, ev in enumerate(events, 1):
+            tool = ev.get("tool", "unknown")
+            dec = ev.get("decision", "unknown")
+            step = ev.get("step_idx")
+            step_str = f"Step {step}" if step else f"#{idx}"
+
+            if dec in ("allow_call", "pass_control", "ack"):
+                badge = "[ALLOWED]"
+            elif dec == "replace_output":
+                badge = "[REDACTED]"
+            else:
+                badge = "[BLOCKED]"
+
+            print(f"--- {step_str}: {tool} -> {badge} ({dec}) ---")
+            print(f"  Time      : {ev.get('timestamp')}")
+            if ev.get("reason"):
+                print(f"  Reason    : {ev.get('reason')}")
+            rule = ev.get("matched_rule")
+            if rule and isinstance(rule, dict):
+                print(f"  Rule      : {rule.get('pattern')} (trust floor: {rule.get('requires_trust')})")
+            traj = ev.get("trajectory_state")
+            if traj and isinstance(traj, dict):
+                print(f"  Trajectory: trust={traj.get('trust')}, aud={traj.get('audience')}")
+            offers = ev.get("offers")
+            if offers:
+                print(f"  Offers    : {offers}")
+            args_data = ev.get("arguments")
+            if args_data:
+                args_preview = json.dumps(args_data)
+                if len(args_preview) > 100:
+                    args_preview = args_preview[:97] + "..."
+                print(f"  Args      : {args_preview}")
+            print()
+        return 0
+
+    elif action in ("enable", "disable"):
+        enable_flag = (action == "enable")
+        p_path = Path(config_path).resolve()
+        if p_path.is_file():
+            content = p_path.read_text(encoding="utf-8")
+            if "[policy.audit]" in content:
+                import re
+                new_content = re.sub(
+                    r"(?m)^enabled\s*=\s*(true|false)",
+                    f"enabled = {'true' if enable_flag else 'false'}",
+                    content
+                )
+                p_path.write_text(new_content, encoding="utf-8")
+                print(f"[OpenAPPA Audit] Set [policy.audit].enabled = {str(enable_flag).lower()} in {p_path}")
+            else:
+                print(f"[OpenAPPA Audit] [policy.audit] section not found in {p_path}.")
+        print(f"[OpenAPPA Audit] You can also override with environment variable: OPENAPPA_AUDIT={'1' if enable_flag else '0'}")
+        return 0
+
+    return 0
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(prog="appa", description="OpenAPPA CLI for Antigravity")
     subparsers = parser.add_subparsers(dest="command")
@@ -472,6 +607,13 @@ def main() -> None:
     p_restart.add_argument("--host", type=str, default="127.0.0.1", help="Server host (default: 127.0.0.1)")
     p_restart.add_argument("--port", type=int, default=8788, help="Server port (default: 8788)")
 
+    # audit
+    p_audit = subparsers.add_parser("audit", help="Inspect and manage OpenAPPA security decision audit trails")
+    p_audit.add_argument("audit_action", nargs="?", default="status", choices=["status", "list", "view", "show", "enable", "disable"], help="Audit action (status, list, view, enable, disable)")
+    p_audit.add_argument("session_id", nargs="?", default=None, help="Session ID or partial prefix to view (defaults to latest)")
+    p_audit.add_argument("--workspace", type=str, default=None, help="Workspace directory (defaults to current working directory)")
+    p_audit.add_argument("--config", type=str, default=None, help="Path to policy TOML file")
+
     args = parser.parse_args()
 
     if args.command == "describe":
@@ -494,6 +636,8 @@ def main() -> None:
         sys.exit(cmd_stop(args))
     elif args.command == "restart":
         sys.exit(cmd_restart(args))
+    elif args.command == "audit":
+        sys.exit(cmd_audit(args))
     else:
         parser.print_help()
         sys.exit(0)

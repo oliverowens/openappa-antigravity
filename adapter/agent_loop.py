@@ -30,10 +30,15 @@ class OpenAppaAgentLoop:
     Enforces fail-closed boundaries on tool calls, tool results, and subagent returns.
     """
 
-    def __init__(self, root_id: Optional[str] = None, runtime_url: str = "http://127.0.0.1:8788"):
+    def __init__(self, root_id: Optional[str] = None, runtime_url: str = "http://127.0.0.1:8788", workspace_dir: Optional[str] = None):
         self.root_id = root_id or str(uuid.uuid4())
         self.client = AppaClient(runtime_url=runtime_url, adapter_name="antigravity")
         self.active = False
+        try:
+            from runtime.audit import AuditLogger
+            self.audit_logger = AuditLogger(workspace_dir=workspace_dir)
+        except Exception:
+            self.audit_logger = None
 
     def start_session(self) -> Dict[str, Any]:
         """Notifies runtime of session start and retrieves initial context."""
@@ -84,6 +89,22 @@ class OpenAppaAgentLoop:
 
         status = decision.get("decision")
 
+        if self.audit_logger:
+            self.audit_logger.record_decision(
+                session_id=self.root_id,
+                event="tool_call",
+                tool=canonical_tool.canonical_id,
+                arguments=arguments,
+                decision=status,
+                reason=decision.get("feedback"),
+                call_id=call_id,
+                child_id=child_id,
+                matched_rule=decision.get("matched_rule"),
+                trajectory_state=decision.get("trajectory"),
+                offers=decision.get("offers"),
+                policy_key=decision.get("policy_key"),
+            )
+
         # Handle remedy control tool
         if status == "pass_control":
             reply = decision.get("reply", "Remedy plan executed.")
@@ -124,6 +145,21 @@ class OpenAppaAgentLoop:
             return False, f"[appa] Fail-closed: Output withheld due to runtime verification error ({e})"
 
         res_status = result_decision.get("decision")
+
+        if self.audit_logger:
+            self.audit_logger.record_decision(
+                session_id=self.root_id,
+                event="tool_result",
+                tool=canonical_tool.canonical_id,
+                arguments=arguments,
+                decision=res_status,
+                call_id=call_id,
+                child_id=child_id,
+                outcome={"status": outcome_status},
+                trajectory_state=result_decision.get("trajectory"),
+                policy_key=result_decision.get("policy_key"),
+            )
+
         if res_status == "replace_output":
             # Model receives sanitized/redacted output
             sanitized_output = result_decision.get("output", "")

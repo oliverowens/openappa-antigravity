@@ -17,7 +17,7 @@ You are the automated Pull Request Reviewer and Security Gatekeeper for **openap
    - All tools must follow the canonical identifier format: `host/antigravity/<tool>` or `mcp/<server>/<tool>`.
 
 3. **Verify Tests & Verification**:
-   - All 18 automated tests in `tests/test_suite.py` must pass.
+   - All 22 automated tests in `tests/test_suite.py` must pass.
    - Trace replay (`appa replay policy-tests/`) and policy check (`appa describe --check`) must pass.
 
 4. **Approval Guidelines**:

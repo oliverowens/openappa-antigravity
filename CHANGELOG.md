@@ -7,8 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-10-04
+
 ### Added
-- Automated release workflows and branch protection.
+- **Local Decision Audit Subsystem (`runtime/audit.py`)**: Real-time caching and persistence of OpenAPPA Information-Flow Control decisions, rule triggers, trajectory state transitions, and remedy offers.
+- **Workspace-Confined Storage (`.appa_audit/`)**: Automatically records decisions inside `.appa_audit/` within the active agent workspace, resolving workspace paths from Antigravity hook payloads.
+- **Dual Persistence Formats**:
+  - Structured JSONL (`session_<id>.jsonl`): Deterministic replay event traces directly compatible with `appa replay`.
+  - Markdown Review Cards (`session_<id>.md`): Human-readable session cards with visual status badges (🟢 ALLOWED, 🔴 BLOCKED, 🟡 REDACTED), matched policy rules, trajectory state before/after, and remedy offers.
+- **Configurable Audit Toggle**: User-controllable toggle via `[policy.audit]` in `policy/appa.toml` or `OPENAPPA_AUDIT` environment variable.
+- **Secret Redaction in Arguments**: Automatic credential masking for tokens, passwords, and private keys in logged argument traces.
+- **Dual Hook Deduplication**: Idempotent event recording ensuring concurrent global and workspace hooks do not generate duplicate log entries.
+- **Audit CLI Commands (`appa audit`)**: Added subcommands `appa audit status`, `appa audit list`, `appa audit view [session_id]`, and `appa audit enable|disable`.
+- **Extended Test Suite**: Added 4 automated unit test cases (total 22 tests) validating audit generation, markdown cards, credential masking, disabled toggles, and CLI inspection.
 
 ## [0.3.0] - 2026-10-04
 

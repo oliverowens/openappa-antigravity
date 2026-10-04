@@ -49,3 +49,7 @@ venv.bak/
 # OS generated
 .DS_Store
 Thumbs.db
+
+# OpenAPPA runtime and audit logs
+.appa_audit/
+.appa_supervisor.lock

@@ -16,6 +16,7 @@ import json
 import os
 import sys
 import time
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -30,7 +31,8 @@ import argparse
 from adapter.client import AppaClient, AppaClientError
 from adapter.agent_loop import OpenAppaAgentLoop, InterceptedExecutionError
 from adapter.hooks_handler import handle_pre_tool_use
-from adapter.cli import cmd_describe, cmd_replay, cmd_yell
+from adapter.cli import cmd_describe, cmd_replay, cmd_yell, cmd_audit
+from runtime.audit import AuditLogger, mask_sensitive_arguments
 
 
 
@@ -503,6 +505,198 @@ class TestOpenAppaAntigravity(unittest.TestCase):
         )
         self.assertFalse(ok_blocked)
         self.assertIn("below required floor", res_blocked)
+
+    # ==========================================================================
+    # Requirement 7: Audit & Decision Logging Subsystem
+    # ==========================================================================
+
+    def test_audit_logger_creates_jsonl_and_markdown(self):
+        """AuditLogger correctly records decisions into dual JSONL and Markdown review cards."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            logger = AuditLogger(workspace_dir=tmpdir, enabled=True)
+            session_id = "test_audit_session"
+
+            # 1. Record an allowed decision
+            path1 = logger.record_decision(
+                session_id=session_id,
+                event="tool_call",
+                tool="host/antigravity/run_command",
+                arguments={"CommandLine": "echo 'safe'"},
+                decision="allow_call",
+                reason="Allowed by security policy.",
+                step_idx="1",
+                call_id="call_001",
+                matched_rule={"pattern": "host/antigravity/run_command", "requires_trust": "trusted"},
+                trajectory_state={"trust": "trusted", "audience": ["public"]},
+            )
+            self.assertIsNotNone(path1)
+
+            # 2. Record a denied decision
+            path2 = logger.record_decision(
+                session_id=session_id,
+                event="tool_call",
+                tool="host/antigravity/delete_all",
+                arguments={"target": "*"},
+                decision="deny_call",
+                reason="[appa] Blocked: tool 'delete_all' is undeclared.",
+                step_idx="2",
+                call_id="call_002",
+            )
+            self.assertIsNotNone(path2)
+
+            audit_dir = Path(tmpdir) / ".appa_audit"
+            self.assertTrue(audit_dir.is_dir())
+
+            jsonl_file = audit_dir / f"session_{session_id}.jsonl"
+            md_file = audit_dir / f"session_{session_id}.md"
+            latest_file = audit_dir / "latest.session"
+
+            self.assertTrue(jsonl_file.is_file())
+            self.assertTrue(md_file.is_file())
+            self.assertTrue(latest_file.is_file())
+            self.assertEqual(latest_file.read_text(encoding="utf-8").strip(), jsonl_file.name)
+
+            # Verify JSONL content
+            lines = [json.loads(line) for line in jsonl_file.read_text(encoding="utf-8").splitlines() if line.strip()]
+            self.assertEqual(len(lines), 2)
+            self.assertEqual(lines[0]["decision"], "allow_call")
+            self.assertEqual(lines[0]["tool"], "host/antigravity/run_command")
+            self.assertEqual(lines[1]["decision"], "deny_call")
+
+            # Verify Markdown content
+            md_content = md_file.read_text(encoding="utf-8")
+            self.assertIn("OpenAPPA Decision Audit Log", md_content)
+            self.assertIn("🟢 ALLOWED", md_content)
+            self.assertIn("🔴 BLOCKED", md_content)
+
+            # Verify session listing
+            sessions = logger.list_sessions()
+            self.assertEqual(len(sessions), 1)
+            self.assertEqual(sessions[0]["session_id"], session_id)
+            self.assertEqual(sessions[0]["event_count"], 2)
+            self.assertEqual(sessions[0]["allowed"], 1)
+            self.assertEqual(sessions[0]["blocked"], 1)
+
+            # Verify reading session events
+            events = logger.read_session_events(session_id)
+            self.assertEqual(len(events), 2)
+
+    def test_audit_logger_masks_sensitive_secrets(self):
+        """Audit logger masks secret keys, tokens, and passwords in logged arguments."""
+        args = {
+            "api_key": "sk-1234567890abcdef",
+            "token": "ghp_secrettokenvalue",
+            "db_password": "supersecretpassword",
+            "short_secret": "abc",
+            "public_param": "hello_world",
+            "nested": {
+                "auth_bearer": "bearer_jwt_token_12345",
+                "normal": 42,
+            },
+        }
+
+        sanitized = mask_sensitive_arguments(args)
+        self.assertTrue(sanitized["api_key"].startswith("sk-"))
+        self.assertTrue(sanitized["api_key"].endswith("...[REDACTED]"))
+        self.assertTrue(sanitized["token"].endswith("...[REDACTED]"))
+        self.assertEqual(sanitized["short_secret"], "[REDACTED]")
+        self.assertEqual(sanitized["public_param"], "hello_world")
+        self.assertTrue(sanitized["nested"]["auth_bearer"].endswith("...[REDACTED]"))
+        self.assertEqual(sanitized["nested"]["normal"], 42)
+
+    def test_audit_logger_disabled_toggle(self):
+        """When audit is disabled, no files or directories are created."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            # 1. Explicitly disabled via constructor
+            logger = AuditLogger(workspace_dir=tmpdir, enabled=False)
+            res = logger.record_decision(
+                session_id="disabled_session",
+                event="tool_call",
+                tool="run_command",
+                arguments={},
+                decision="allow_call",
+            )
+            self.assertIsNone(res)
+            self.assertFalse((Path(tmpdir) / ".appa_audit").exists())
+
+            # 2. Environment variable override
+            old_env = os.environ.get("OPENAPPA_AUDIT")
+            try:
+                os.environ["OPENAPPA_AUDIT"] = "0"
+                logger_env = AuditLogger(workspace_dir=tmpdir, enabled=True)
+                self.assertFalse(logger_env.enabled)
+            finally:
+                if old_env is not None:
+                    os.environ["OPENAPPA_AUDIT"] = old_env
+                else:
+                    os.environ.pop("OPENAPPA_AUDIT", None)
+
+    def test_audit_cli_commands(self):
+        """CLI `appa audit status`, `appa audit list`, and `appa audit view` run cleanly."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            logger = AuditLogger(workspace_dir=tmpdir, enabled=True)
+            logger.record_decision(
+                session_id="cli_test_session",
+                event="tool_call",
+                tool="host/antigravity/run_command",
+                arguments={"CommandLine": "echo 'testing CLI'"},
+                decision="allow_call",
+                step_idx="1",
+                call_id="call_cli_1",
+            )
+
+            # Test status
+            args_status = argparse.Namespace(
+                audit_action="status",
+                workspace=tmpdir,
+                config=str(ROOT_DIR / "policy" / "appa.toml"),
+            )
+            buf = io.StringIO()
+            old_stdout = sys.stdout
+            try:
+                sys.stdout = buf
+                code = cmd_audit(args_status)
+                self.assertEqual(code, 0)
+                output = buf.getvalue()
+                self.assertIn("OpenAPPA Audit Subsystem Status", output)
+                self.assertIn("Total Sessions   : 1", output)
+            finally:
+                sys.stdout = old_stdout
+
+            # Test list
+            args_list = argparse.Namespace(
+                audit_action="list",
+                workspace=tmpdir,
+                config=str(ROOT_DIR / "policy" / "appa.toml"),
+            )
+            buf = io.StringIO()
+            try:
+                sys.stdout = buf
+                code = cmd_audit(args_list)
+                self.assertEqual(code, 0)
+                output = buf.getvalue()
+                self.assertIn("cli_test_session", output)
+            finally:
+                sys.stdout = old_stdout
+
+            # Test view
+            args_view = argparse.Namespace(
+                audit_action="view",
+                session_id="cli_test_session",
+                workspace=tmpdir,
+                config=str(ROOT_DIR / "policy" / "appa.toml"),
+            )
+            buf = io.StringIO()
+            try:
+                sys.stdout = buf
+                code = cmd_audit(args_view)
+                self.assertEqual(code, 0)
+                output = buf.getvalue()
+                self.assertIn("OpenAPPA Audit Review: Session cli_test_session", output)
+                self.assertIn("[ALLOWED]", output)
+            finally:
+                sys.stdout = old_stdout
+
 
 
 if __name__ == "__main__":

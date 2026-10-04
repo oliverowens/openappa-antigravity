@@ -143,7 +143,14 @@ class AppaEngine:
         if call_key in traj.authorized_calls:
             traj.authorized_calls.pop(call_key)
             traj.pending_calls[cid] = {"tool": tool, "arguments": arguments, "rule": None, "authorized": True}
-            return {"protocol": 1, "decision": "allow_call", "spawn": None}
+            return {
+                "protocol": 1,
+                "decision": "allow_call",
+                "spawn": None,
+                "matched_rule": {"pattern": "remedy_authorized", "requires_trust": None},
+                "trajectory": {"trust": traj.label.trust.to_str(), "audience": [traj.label.audience]},
+                "policy_key": self.policy_key,
+            }
 
         # Find matching policy rule
         matched_rule: Optional[ToolRule] = None
@@ -152,12 +159,22 @@ class AppaEngine:
                 matched_rule = rule
                 break
 
+        rule_dict = {
+            "pattern": matched_rule.raw_pattern if matched_rule else None,
+            "requires_trust": matched_rule.requires_trust.to_str() if (matched_rule and matched_rule.requires_trust) else None,
+            "delta_trust": matched_rule.delta_trust if matched_rule else None,
+            "delta_audience": matched_rule.delta_audience if matched_rule else None,
+        } if matched_rule else None
+
         if not matched_rule:
             return {
                 "protocol": 1,
                 "decision": "deny_call",
                 "feedback": f"[appa] Blocked: tool '{tool}' is not declared in policy (fail-closed).",
                 "offers": [],
+                "matched_rule": None,
+                "trajectory": {"trust": traj.label.trust.to_str(), "audience": [traj.label.audience]},
+                "policy_key": self.policy_key,
             }
 
         # 1. Check trust requirement
@@ -168,6 +185,9 @@ class AppaEngine:
                     "decision": "deny_call",
                     "feedback": f"[appa] Blocked: trust is '{traj.label.trust.to_str()}', below required floor '{matched_rule.requires_trust.to_str()}'.",
                     "offers": [],
+                    "matched_rule": rule_dict,
+                    "trajectory": {"trust": traj.label.trust.to_str(), "audience": [traj.label.audience]},
+                    "policy_key": self.policy_key,
                 }
 
         # 2. Check audience requirement
@@ -191,11 +211,21 @@ class AppaEngine:
                             f'Take remedy with offer_id: "{offer_id}".'
                         ),
                         "offers": [{"offer_id": offer_id, "remedy_type": "narrowing"}],
+                        "matched_rule": rule_dict,
+                        "trajectory": {"trust": traj.label.trust.to_str(), "audience": [traj.label.audience]},
+                        "policy_key": self.policy_key,
                     }
 
         # Call is allowed
         traj.pending_calls[cid] = {"tool": tool, "arguments": arguments, "rule": matched_rule}
-        return {"protocol": 1, "decision": "allow_call", "spawn": None}
+        return {
+            "protocol": 1,
+            "decision": "allow_call",
+            "spawn": None,
+            "matched_rule": rule_dict,
+            "trajectory": {"trust": traj.label.trust.to_str(), "audience": [traj.label.audience]},
+            "policy_key": self.policy_key,
+        }
 
     def handle_tool_result(
         self,
@@ -241,6 +271,9 @@ class AppaEngine:
                     "protocol": 1,
                     "decision": "replace_output",
                     "output": sanitized_body,
+                    "redacted": True,
+                    "trajectory": {"trust": traj.label.trust.to_str(), "audience": [traj.label.audience]},
+                    "policy_key": self.policy_key,
                 }
 
         # Apply normal delta to trajectory label
@@ -250,7 +283,13 @@ class AppaEngine:
                 delta_audience=matched_rule.delta_audience,
             )
 
-        return {"protocol": 1, "decision": "ack"}
+        return {
+            "protocol": 1,
+            "decision": "ack",
+            "redacted": False,
+            "trajectory": {"trust": traj.label.trust.to_str(), "audience": [traj.label.audience]},
+            "policy_key": self.policy_key,
+        }
 
     def handle_child_start(self, root_id: str, child_id: str, schema: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         parent_traj = self._get_trajectory(root_id)

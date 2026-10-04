@@ -25,6 +25,11 @@ class PolicyConfig:
     trusted_domains: List[str] = field(default_factory=list)
     subagents_allow_execution: bool = False
     subagents_allow_writes: bool = False
+    audit_enabled: bool = True
+    audit_dir: str = ".appa_audit"
+    audit_format: str = "jsonl"
+    audit_generate_markdown: bool = True
+    audit_mask_secrets: bool = True
 
 
 def parse_tool_rule(data: Dict[str, Any]) -> ToolRule:
@@ -115,6 +120,7 @@ def load_policy_and_config(
     bound_sec = policy_sec.get("boundaries", {})
     net_sec = policy_sec.get("network", {})
     sub_sec = policy_sec.get("subagents", {})
+    audit_sec = policy_sec.get("audit", {})
 
     config = PolicyConfig(
         hitl_mode=hitl_sec.get("mode", "chat"),
@@ -126,6 +132,11 @@ def load_policy_and_config(
         trusted_domains=net_sec.get("trusted_domains", []),
         subagents_allow_execution=sub_sec.get("allow_execution", False),
         subagents_allow_writes=sub_sec.get("allow_writes", False),
+        audit_enabled=audit_sec.get("enabled", True),
+        audit_dir=audit_sec.get("dir", ".appa_audit"),
+        audit_format=audit_sec.get("format", "jsonl"),
+        audit_generate_markdown=audit_sec.get("generate_markdown", True),
+        audit_mask_secrets=audit_sec.get("mask_secrets", True),
     )
 
     return rules, config

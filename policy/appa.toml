@@ -37,6 +37,18 @@ engine = "builtin-regex"
 provider = "none"
 status = "planned"
 
+[policy.audit]
+# Toggle caching/storing OpenAPPA decisions in the active workspace
+enabled = true
+# Folder name located inside the active workspace
+dir = ".appa_audit"
+# Format: "jsonl" (deterministic, compatible with `appa replay`)
+format = "jsonl"
+# Generate human-readable session summary in Markdown alongside JSONL
+generate_markdown = true
+# Mask credentials, tokens, and keys in logged argument traces
+mask_secrets = true
+
 # ==============================================================================
 # Boundaries & Allowlist
 # ==============================================================================

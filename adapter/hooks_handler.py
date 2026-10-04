@@ -167,6 +167,43 @@ def handle_pre_tool_use(payload: Dict[str, Any], client: AppaClient) -> Dict[str
         }
 
     status = decision.get("decision")
+
+    # Record decision into .appa_audit directory in the active workspace
+    try:
+        from runtime.audit import AuditLogger
+        from runtime.policy_loader import load_policy_and_config
+        from pathlib import Path
+
+        workspace_paths = payload.get("workspacePaths", [])
+        workspace_root = workspace_paths[0] if workspace_paths else None
+
+        policy_file = Path(__file__).resolve().parent.parent / "policy" / "appa.toml"
+        audit_enabled = True
+        if policy_file.is_file():
+            try:
+                _, config = load_policy_and_config(policy_file)
+                audit_enabled = getattr(config, "audit_enabled", True)
+            except Exception:
+                pass
+
+        logger = AuditLogger(workspace_dir=workspace_root, enabled=audit_enabled)
+        logger.record_decision(
+            session_id=conversation_id,
+            event="tool_call",
+            tool=canonical_tool.canonical_id,
+            arguments=args,
+            decision=status,
+            reason=decision.get("feedback") or ("Allowed by security policy." if status in ("allow_call", "pass_control") else None),
+            step_idx=step_idx,
+            call_id=f"step_{step_idx}_{raw_name}",
+            matched_rule=decision.get("matched_rule"),
+            trajectory_state=decision.get("trajectory"),
+            offers=decision.get("offers"),
+            policy_key=decision.get("policy_key"),
+        )
+    except Exception:
+        pass
+
     if status in ("allow_call", "pass_control"):
         return {"decision": "allow"}
     elif status == "deny_call":

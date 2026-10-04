@@ -2,7 +2,7 @@
 
 [![OpenAPPA](https://img.shields.io/badge/OpenAPPA-v1-blue.svg)](https://github.com/archestra-ai/OpenAPPA)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-brightgreen.svg)](https://www.python.org/)
-[![Version](https://img.shields.io/badge/version-0.3.0-informational.svg)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.4.0-informational.svg)](CHANGELOG.md)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 
@@ -93,15 +93,16 @@ openappa-antigravity/
 ├── adapter/
 │   ├── agent_loop.py          # Complete agent loop proxy with call, result & subagent checks
 │   ├── antigravity_adapter.py # Canonical tool normalizer and selector extractor
-│   ├── cli.py                 # Canonical OpenAPPA CLI (describe, replay, yell)
+│   ├── cli.py                 # Canonical OpenAPPA CLI (describe, replay, yell, audit, install)
 │   ├── client.py              # OpenAPPA Wire Protocol 1 HTTP client (fail-closed)
 │   └── hooks_handler.py       # CLI bridge for Antigravity .agents/hooks.json
 ├── policy/
-│   └── appa.toml              # Root policy defining tool contracts, labels & sanitizers
+│   └── appa.toml              # Root policy defining tool contracts, labels, sanitizers & audit
 ├── policy-tests/
 │   └── trajectories_replay.json # Scripted deterministic replay trace suite
 ├── runtime/
 │   ├── algebra.py             # APPA Information-Flow Control monoid & lattice algebra
+│   ├── audit.py               # Local decision audit logging, JSONL/Markdown generator & secret masking
 │   ├── engine.py              # Trajectory state store and decision engine
 │   ├── policy_loader.py       # Built-in TOML policy loader with include = [...] support
 │   ├── sanitizers.py          # redact-secrets, attest-schema & RFC 8785 canonical JSON
@@ -109,7 +110,7 @@ openappa-antigravity/
 ├── appa-package.toml          # Canonical OpenAPPA battery package manifest
 ├── appa.py                    # Root CLI entry point
 └── tests/
-    └── test_suite.py          # Automated verification test suite (18 test cases)
+    └── test_suite.py          # Automated verification test suite (22 test cases)
 ```
 
 ---
@@ -134,6 +135,12 @@ python appa.py stop
 python appa.py install              # Global (~/.gemini/config/hooks.json)
 python appa.py install --workspace  # Current workspace (.agents/hooks.json)
 
+# Inspect and review decision audit trails (.appa_audit/ in active workspace)
+python appa.py audit status         # Show audit subsystem health, dir, and decision counts
+python appa.py audit list           # List all recorded sessions with allowed/blocked tallies
+python appa.py audit view [session] # Review decisions, triggered rules, and trajectory shifts
+python appa.py audit enable|disable # Toggle audit logging in policy TOML configuration
+
 # Deterministically replay recorded event traces without running live tools
 python appa.py replay policy-tests/
 
@@ -142,6 +149,17 @@ python appa.py yell
 ```
 
 ---
+
+## Decision Audit Trails (`.appa_audit/`)
+
+OpenAPPA caches and stores all security decisions directly in a `.appa_audit/` directory inside the active agent workspace:
+
+- **Configurable Toggle**: Configured via `[policy.audit]` in `policy/appa.toml` or via the `OPENAPPA_AUDIT=1|0` environment variable.
+- **Dual Persistence Formats**:
+  * **Structured JSONL (`session_<id>.jsonl`)**: Deterministic event log compatible with `appa replay`.
+  * **Markdown Review Card (`session_<id>.md`)**: Human-readable markdown document with color status badges (🟢 ALLOWED, 🔴 BLOCKED, 🟡 REDACTED), matched policy rules, trajectory state before/after, and remedy offers.
+- **Argument Redaction**: Automatic credential masking for tokens, passwords, and private keys before logging.
+
 
 ## Tool Mapping
 
@@ -173,7 +191,7 @@ To run the automated verification test suite:
 python -m unittest tests/test_suite.py
 ```
 
-The 18 automated tests verify:
+The 22 automated tests verify:
 1. Denied calls never execute (undeclared tools, untrusted shell commands, credential exfiltration).
 2. Blocked / sensitive results never reach the model (`redact-secrets` masks keys, indeterminate runs withheld).
 3. Runtime errors stop the flow (fail-closed if server down).
@@ -188,6 +206,10 @@ The 18 automated tests verify:
 12. Schema-compliant diagnostic reporting (`openappa.yell.v1`).
 13. Battery composition via `include = [...]` in `policy_loader.py`.
 14. Complete Antigravity interactive tool governance (`ask_question`, `send_message`, etc.).
+15. Decision audit logging into workspace `.appa_audit` (JSONL + Markdown).
+16. Credential masking in recorded tool arguments.
+17. Audit toggle enforcement via `[policy.audit]` and `OPENAPPA_AUDIT`.
+18. CLI inspection tooling (`appa audit status`, `list`, `view`).
 
 ---
 
