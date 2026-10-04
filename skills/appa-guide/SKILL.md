@@ -1,7 +1,7 @@
 ---
 name: appa-guide
 description: Set up, inspect, and tune OpenAPPA security policies on the Google Antigravity host. Checks tool coverage, connects batteries, configures IFC boundaries, explains blocks, and configures remedies.
-argument-hint: "[init | adjust | explain | what you want]"
+argument-hint: "[init | adjust | explain | audit | what you want]"
 ---
 
 # OpenAPPA Guide for Antigravity Host
@@ -53,6 +53,7 @@ Antigravity native tools map to OpenAPPA canonical identifiers:
 - **`init`**: Scan installed tools, inspect current `policy/appa.toml`, verify runtime server health (`GET http://127.0.0.1:8788/health`), and propose default policy.
 - **`adjust`**: Adjust trust ceilings, reader lists, credential path selectors, or external service integrations (HITL approvals, secret redaction, directory sync).
 - **`explain`**: Explain why a tool call was denied or why an output was redacted/withheld, citing the active policy rules and trajectory label.
+- **`audit`**: Inspect security decision audit trails in `.appa_audit/`, review recent session markdown cards, and verify triggered policy rules or remedy offers via `appa audit`.
 
 ## Strict Security Guarantees
 

@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.1] - 2026-10-05
+
+### Changed & Maintained
+- **Skill Manifest Synchronization**: Synchronized `skills/appa-guide/SKILL.md` with `.agents/skills/appa-guide/SKILL.md` to document the `audit` operational mode and argument options.
+- **Dependency Automation**: Updated `dependabot/fetch-metadata` action from v2 to v3 in `.github/workflows/dependabot-automerge.yml`.
+- **Runtime Daemon Synchronization**: Verified and aligned active local daemon on `http://127.0.0.1:8788` with `v0.5.1`.
+- **Repository Hygiene**: Cleaned up ephemeral build artifacts and removed deprecated prompt files.
+
 ## [0.5.0] - 2026-10-04
 
 ### Added
