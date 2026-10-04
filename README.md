@@ -109,7 +109,7 @@ openappa-antigravity/
 ├── adapter/
 │   ├── agent_loop.py          # Complete agent loop proxy with call, result & subagent checks
 │   ├── antigravity_adapter.py # Canonical tool normalizer and selector extractor
-│   ├── cli.py                 # Canonical OpenAPPA CLI (describe, replay, yell, audit, install)
+│   ├── cli.py                 # Canonical OpenAPPA CLI (describe, replay, yell, audit, install, version)
 │   ├── client.py              # OpenAPPA Wire Protocol 1 HTTP client (fail-closed)
 │   └── hooks_handler.py       # CLI bridge for Antigravity .agents/hooks.json
 ├── policy/
@@ -126,7 +126,7 @@ openappa-antigravity/
 ├── appa-package.toml          # Canonical OpenAPPA battery package manifest
 ├── appa.py                    # Root CLI entry point
 └── tests/
-    └── test_suite.py          # Automated verification test suite (22 test cases)
+    └── test_suite.py          # Automated verification test suite (27 test cases)
 ```
 
 ---
@@ -159,6 +159,10 @@ python appa.py audit enable|disable # Toggle audit logging in policy TOML config
 
 # Deterministically replay recorded event traces without running live tools
 python appa.py replay policy-tests/
+
+# Inspect and verify semantic versioning
+python appa.py version                # Display active package version
+python appa.py version --check        # Verify all 5 package manifests are in lockstep
 
 # Generate an openappa.yell.v1 diagnostic report
 python appa.py yell
@@ -207,7 +211,7 @@ To run the automated verification test suite:
 python -m unittest tests/test_suite.py
 ```
 
-The 22 automated tests verify:
+The 27 automated tests verify:
 1. Denied calls never execute (undeclared tools, untrusted shell commands, credential exfiltration).
 2. Blocked / sensitive results never reach the model (`redact-secrets` masks keys, indeterminate runs withheld).
 3. Runtime errors stop the flow (fail-closed if server down).
@@ -226,12 +230,18 @@ The 22 automated tests verify:
 16. Credential masking in recorded tool arguments.
 17. Audit toggle enforcement via `[policy.audit]` and `OPENAPPA_AUDIT`.
 18. CLI inspection tooling (`appa audit status`, `list`, `view`).
+19. Lockstep SemVer manifest synchronization (`pyproject`, `appa-package`, inits, `README`).
+20. Strict SemVer 2.0.0 syntax validation and parser robustness.
+21. Semantic version bump arithmetic (patch, minor, major).
+22. Conventional Commit bump inference (`fix:` -> patch, `feat:` -> minor, `BREAKING CHANGE:` -> major).
+23. CLI version management (`appa version` and `appa version --check`).
 
 ---
 
 ## Contributing & Security
 
 * **Contributing**: Contributions are welcome! Please read our [Contributing Guidelines](CONTRIBUTING.md) and [Code of Conduct](CODE_OF_CONDUCT.md).
+* **AI Agent Directives**: Automated coding agents must adhere to the [AI Agent Operational & Versioning Protocol](AGENTS.md).
 * **Security Policy**: For responsible vulnerability disclosure instructions, please consult our [Security Policy](SECURITY.md).
 
 ---

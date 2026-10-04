@@ -59,12 +59,20 @@ python appa.py replay policy-tests/
 ```
 
 ### 3. Automated Test Suite
-Run the full test suite:
+Run the full test suite (27 automated test cases):
 ```bash
 python -m unittest tests/test_suite.py
 ```
 
-### 4. Code Formatting & Linting
+### 4. Semantic Versioning & Manifest Verification
+Ensure that all repository manifests and badges are in lockstep:
+```bash
+python scripts/release.py --verify
+# or via CLI:
+python appa.py version --check
+```
+
+### 5. Code Formatting & Linting
 Ensure code adheres to standard Python formatting conventions (4 spaces, clean imports, PEP 8).
 
 ---

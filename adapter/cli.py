@@ -557,6 +557,33 @@ def cmd_audit(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_version(args: argparse.Namespace) -> int:
+    try:
+        from scripts.release import verify_versions, get_current_version
+    except ImportError:
+        import importlib.util
+        spec = importlib.util.spec_from_file_location("scripts.release", str(ROOT_DIR / "scripts" / "release.py"))
+        rel_mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(rel_mod)
+        verify_versions = rel_mod.verify_versions
+        get_current_version = rel_mod.get_current_version
+
+    if getattr(args, "check", False) or getattr(args, "verify", False):
+        in_sync, primary, discrepancies = verify_versions()
+        if in_sync:
+            print(f"[OpenAPPA SemVer] SUCCESS: All package manifests are synchronized at v{primary}")
+            return 0
+        else:
+            print(f"[OpenAPPA SemVer] ERROR: Version drift detected across manifests! Primary: {primary}", file=sys.stderr)
+            for path, ver in discrepancies.items():
+                print(f"  - {path}: {ver}", file=sys.stderr)
+            return 1
+
+    curr = get_current_version()
+    print(f"openappa-antigravity v{curr}")
+    return 0
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(prog="appa", description="OpenAPPA CLI for Antigravity")
     subparsers = parser.add_subparsers(dest="command")
@@ -616,6 +643,10 @@ def main() -> None:
     p_audit.add_argument("--workspace", type=str, default=None, help="Workspace directory (defaults to current working directory)")
     p_audit.add_argument("--config", type=str, default=None, help="Path to policy TOML file")
 
+    # version
+    p_version = subparsers.add_parser("version", help="Inspect and verify semantic versioning")
+    p_version.add_argument("--check", "--verify", dest="check", action="store_true", help="Verify all manifests are synchronized and SemVer compliant")
+
     args = parser.parse_args()
 
     if args.command == "describe":
@@ -640,6 +671,8 @@ def main() -> None:
         sys.exit(cmd_restart(args))
     elif args.command == "audit":
         sys.exit(cmd_audit(args))
+    elif args.command == "version":
+        sys.exit(cmd_version(args))
     else:
         parser.print_help()
         sys.exit(0)

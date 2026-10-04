@@ -31,8 +31,16 @@ import argparse
 from adapter.client import AppaClient, AppaClientError
 from adapter.agent_loop import OpenAppaAgentLoop, InterceptedExecutionError
 from adapter.hooks_handler import handle_pre_tool_use
-from adapter.cli import cmd_describe, cmd_replay, cmd_yell, cmd_audit
+from adapter.cli import cmd_describe, cmd_replay, cmd_yell, cmd_audit, cmd_version
 from runtime.audit import AuditLogger, mask_sensitive_arguments
+from scripts.release import (
+    verify_versions,
+    get_current_version,
+    parse_semver,
+    bump_version,
+    infer_bump_from_commits,
+    SEMVER_REGEX,
+)
 
 
 
@@ -697,6 +705,112 @@ class TestOpenAppaAntigravity(unittest.TestCase):
             finally:
                 sys.stdout = old_stdout
 
+    # ==========================================================================
+    # Requirement 7: Test-Driven Semantic Versioning & Manifest Integrity
+    # ==========================================================================
+
+    def test_semver_manifests_are_synchronized(self):
+        """All package manifests (pyproject, appa-package, inits, README badge) are in lockstep."""
+        in_sync, primary, discrepancies = verify_versions()
+        self.assertTrue(
+            in_sync,
+            f"Version drift detected across repository manifests! Primary: {primary}, Discrepancies: {discrepancies}"
+        )
+        self.assertRegex(primary, SEMVER_REGEX)
+
+    def test_semver_syntax_and_parser(self):
+        """parse_semver correctly parses semantic versions and rejects malformed versions."""
+        # Valid standard SemVer
+        maj, min_, patch = parse_semver("0.4.0")
+        self.assertEqual((maj, min_, patch), (0, 4, 0))
+
+        maj, min_, patch = parse_semver("v1.2.3")
+        self.assertEqual((maj, min_, patch), (1, 2, 3))
+
+        maj, min_, patch = parse_semver("2.10.5-rc.1")
+        self.assertEqual((maj, min_, patch), (2, 10, 5))
+
+        # Invalid versions
+        with self.assertRaises(ValueError):
+            parse_semver("1.2")
+        with self.assertRaises(ValueError):
+            parse_semver("invalid-semver")
+        with self.assertRaises(ValueError):
+            parse_semver("1.2.3.4")
+
+    def test_semver_bump_calculation_rules(self):
+        """bump_version strictly follows SemVer arithmetic (patch, minor, major)."""
+        base = "0.4.0"
+        self.assertEqual(bump_version(base, "patch"), "0.4.1")
+        self.assertEqual(bump_version(base, "minor"), "0.5.0")
+        self.assertEqual(bump_version(base, "major"), "1.0.0")
+
+        v2 = "1.9.9"
+        self.assertEqual(bump_version(v2, "patch"), "1.9.10")
+        self.assertEqual(bump_version(v2, "minor"), "1.10.0")
+        self.assertEqual(bump_version(v2, "major"), "2.0.0")
+
+        with self.assertRaises(ValueError):
+            bump_version(base, "unknown_part")
+
+    def test_semver_conventional_commit_inference(self):
+        """infer_bump_from_commits correctly infers bump level from Conventional Commits."""
+        # 1. Bug fixes, docs, chore -> patch
+        patch_commits = [
+            "fix: correct edge case in path confinement",
+            "docs: update readme with quickstart",
+            "chore: bump dependencies in lockfile",
+        ]
+        bump, _ = infer_bump_from_commits(patch_commits)
+        self.assertEqual(bump, "patch")
+
+        # 2. Features -> minor
+        feat_commits = [
+            "fix: typo in error message",
+            "feat(cli): add appa version command",
+        ]
+        bump, _ = infer_bump_from_commits(feat_commits)
+        self.assertEqual(bump, "minor")
+
+        # 3. Breaking changes via bang -> major
+        breaking_bang = [
+            "feat!: redesign Information-Flow Control algebra",
+            "fix: minor bug",
+        ]
+        bump, _ = infer_bump_from_commits(breaking_bang)
+        self.assertEqual(bump, "major")
+
+        # 4. Breaking changes via footer -> major
+        breaking_footer = [
+            "feat: update wire protocol\n\nBREAKING CHANGE: changes decision response envelope",
+        ]
+        bump, _ = infer_bump_from_commits(breaking_footer)
+        self.assertEqual(bump, "major")
+
+    def test_semver_cli_version_command(self):
+        """CLI `appa version` and `appa version --check` execute successfully."""
+        # 1. Standard version display
+        args_plain = argparse.Namespace(check=False)
+        buf = io.StringIO()
+        old_stdout = sys.stdout
+        try:
+            sys.stdout = buf
+            code = cmd_version(args_plain)
+            self.assertEqual(code, 0)
+            self.assertIn("openappa-antigravity v", buf.getvalue())
+        finally:
+            sys.stdout = old_stdout
+
+        # 2. Lockstep verification check
+        args_check = argparse.Namespace(check=True)
+        buf2 = io.StringIO()
+        try:
+            sys.stdout = buf2
+            code = cmd_version(args_check)
+            self.assertEqual(code, 0)
+            self.assertIn("[OpenAPPA SemVer] SUCCESS", buf2.getvalue())
+        finally:
+            sys.stdout = old_stdout
 
 
 if __name__ == "__main__":
