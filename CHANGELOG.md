@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-10-04
+
+### Added
+- **AI Agent Operational & Versioning Protocol (`AGENTS.md`)**: Mandatory guidelines and semantic versioning contracts for autonomous coding agents (Antigravity, Copilot, Cursor, Claude Code, Codex).
+- **Test-Driven Semantic Versioning Automation (`scripts/release.py`)**:
+  - Automatic Conventional Commit bump inference (`fix:` -> patch, `feat:` -> minor, `BREAKING CHANGE:` -> major).
+  - Lockstep manifest synchronization verification across `pyproject.toml`, `appa-package.toml`, `runtime/__init__.py`, `adapter/__init__.py`, and `README.md`.
+  - Strict SemVer 2.0.0 syntax parsing and bump calculation.
+- **CLI Version Command (`appa version`)**: Added `appa version` to inspect active version and `appa version --check` to verify manifest synchronization.
+- **Runtime Version Reporting**: Server `/status` endpoint and `appa status` CLI command now report active runtime package version.
+- **SemVer Test Suite**: Added 5 new automated unit tests (27 total tests in `tests/test_suite.py`) validating manifest synchronization, syntax parsing, bump arithmetic, commit inference, and CLI execution.
+- **CI Version Integrity Gate**: Added `python scripts/release.py --verify` step to `.github/workflows/ci.yml`.
+
 ## [0.4.0] - 2026-10-04
 
 ### Added
