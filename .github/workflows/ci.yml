@@ -10,6 +10,18 @@ permissions:
   contents: read
 
 jobs:
+  lint-workflows:
+    name: Lint Workflows
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v7
+
+    - name: Run actionlint
+      run: |
+        bash <(curl -s https://raw.githubusercontent.com/rhysd/actionlint/main/scripts/download-actionlint.bash)
+        ./actionlint -color
+
   test:
     name: Test & Verify
     runs-on: ubuntu-latest
@@ -27,9 +39,9 @@ jobs:
       with:
         python-version: ${{ matrix.python-version }}
 
-    - name: Install dependencies
+    - name: Install dependencies and build tools
       run: |
-        python -m pip install --upgrade pip
+        python -m pip install --upgrade pip build
         pip install -e .
 
     - name: Run policy check (describe --check)
@@ -43,3 +55,7 @@ jobs:
     - name: Run unit test suite
       run: |
         python -m unittest tests/test_suite.py
+
+    - name: Verify package build
+      run: |
+        python -m build
